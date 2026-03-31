@@ -49,7 +49,10 @@
     <!-- แถบนำทาง -->
     <nav class="bg-blue-900 text-white p-4 shadow-md hide-on-pdf">
         <div class="container mx-auto flex justify-between items-center">
-            <h1 class="text-xl font-bold font-italic">2PS SERVICE Payslip System</h1>
+            <div class="flex items-center">
+                <img src="logo.jpg" alt="Logo" class="h-10 w-auto mr-3 bg-white p-1 rounded-md" onerror="this.style.display='none'">
+                <h1 class="text-xl font-bold font-italic">2PS SERVICE Payslip System</h1>
+            </div>
             <div id="nav-menu">
                 <button onclick="switchRole('login')" class="px-3 py-1 bg-red-500 rounded hover:bg-red-600">ออกจากระบบ</button>
             </div>
@@ -79,7 +82,7 @@
             <div class="bg-yellow-50 border-l-4 border-yellow-500 p-5 mb-6 shadow-sm rounded-r-lg flex flex-col md:flex-row gap-4 items-center">
                 <div class="flex-1">
                     <h3 class="font-bold text-yellow-800 mb-1 text-lg">นำเข้าข้อมูลจากไฟล์ Excel</h3>
-                    <p class="text-sm text-gray-700">ระบบจะดึงข้อมูล <b>เบี้ยขยัน, ค่าตำแหน่ง, ค่าเช่าบ้าน, รายได้อื่นๆ (เงินพิเศษ, แท็กซี่, เบี้ยปลอด)</b> ให้อัตโนมัติ<br>รวมถึง <b>รวมเงินเบิก</b>, <b>คงเหลือ</b> และ <b>เลข บช</b></p>
+                    <p class="text-sm text-gray-700">ระบบจะดึงข้อมูล <b>เบี้ยขยัน, ค่าตำแหน่ง, ค่าเช่าบ้าน, รายได้อื่นๆ, ค่า ปกส, รวมรายได้, รวมเงินเบิก, คงเหลือ และเลข บช</b> ให้อัตโนมัติ<br>ระบบจะลบชื่อเล่นในวงเล็บ และดึง <b>เดือน/ปี</b> จากแถวที่ 2 อัตโนมัติ</p>
                 </div>
                 <div class="w-full md:w-1/3">
                     <label class="block text-sm font-bold text-gray-700 mb-1">ประจำงวด (Period)</label>
@@ -146,7 +149,7 @@
                     <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
                         <div><label class="block text-sm">ภาษี</label><input type="number" step="0.01" id="f_ded_tax" class="w-full border p-2 rounded num-input calc-ded" value="1915.42"></div>
                         <div><label class="block text-sm">ประกันสังคม</label><input type="number" step="0.01" id="f_ded_soc" class="w-full border p-2 rounded num-input calc-ded" value="750.00"></div>
-                        <div><label class="block text-sm">เงินหักอื่นๆ</label><input type="number" step="0.01" id="f_ded_other" class="w-full border p-2 rounded num-input calc-ded" value="0.00"></div>
+                        <div><label class="block text-sm">เงินหักอื่นๆ (รวมเงินเบิก)</label><input type="number" step="0.01" id="f_ded_other" class="w-full border p-2 rounded num-input calc-ded" value="0.00"></div>
                     </div>
                     <div class="mt-2 text-right text-lg font-bold text-red-700">รวมเงินหัก: <span id="f_total_deduction">0.00</span></div>
 
@@ -214,8 +217,9 @@
         <div id="payslip-render-area" class="payslip-container shadow-2xl">
             <!-- Header -->
             <div class="slip-header">
-                <div>
-                    <img src="messageImage_1760079883553.png" alt="2PS SERVICE Logo" class="logo-image" onerror="this.onerror=null; this.src='https://placehold.co/200x60/ffffff/1e3a8a?text=2PS+SERVICE';">
+                <div class="flex items-end">
+                    <img src="logo.jpg" alt="2PS SERVICE Logo" class="logo-image mr-3" onerror="this.onerror=null; this.src='https://placehold.co/60x60/ffffff/1e3a8a?text=2PS';">
+                    <span class="font-bold text-3xl pb-2" style="color: #1e3a8a; line-height: 1;">2PS SERVICE</span>
                 </div>
                 <div class="title-text">PAY SLIP</div>
                 <div class="confidential-box">ลับเฉพาะ</div>
@@ -347,7 +351,7 @@
             const file = e.target.files[0];
             if (!file) return;
 
-            // ตรวจสอบชื่อไฟล์เพื่อหางวด (เช่น March = มีนาคม)
+            // ตรวจสอบชื่อไฟล์สำรองเพื่อหางวด (เผื่อแถวที่ 2 ไม่มี)
             let filename = file.name.toLowerCase();
             let parsedPeriod = '';
             
@@ -364,32 +368,45 @@
             else if (filename.includes('nov') || filename.includes('พ.ย.')) parsedPeriod = 'พฤศจิกายน';
             else if (filename.includes('dec') || filename.includes('ธ.ค.')) parsedPeriod = 'ธันวาคม';
 
-            // ตรวจหาปีในชื่อไฟล์ เช่น 26 -> 2569 หรือ 67 -> 2567
             let yearMatch = filename.match(/(20\d{2}|25\d{2}|\d{2})/);
             if (parsedPeriod && yearMatch) {
                 let yr = parseInt(yearMatch[1]);
-                if (yr < 100) {
-                    if (yr < 50) yr += 2543; // เช่น 26 -> 2569 (2026+543)
-                    else yr += 2500; // เช่น 67 -> 2567
-                } else if (yr < 2500) {
-                    yr += 543; // เช่น 2026 -> 2569
-                }
+                if (yr < 100) yr += (yr < 50 ? 2543 : 2500); 
+                else if (yr < 2500) yr += 543; 
                 parsedPeriod += " " + yr;
             }
-
-            // นำงวดที่วิเคราะห์ได้ ไปใส่ช่อง Input ให้อัตโนมัติ (ถ้ายังว่างอยู่)
-            const periodInputElem = document.getElementById('uploadPeriod');
-            if (!periodInputElem.value.trim() && parsedPeriod) {
-                periodInputElem.value = parsedPeriod;
-            }
-
-            const periodInput = periodInputElem.value.trim() || parsedPeriod || 'ไม่ระบุงวด';
 
             const reader = new FileReader();
             reader.onload = function(e) {
                 const data = new Uint8Array(e.target.result);
                 const workbook = XLSX.read(data, {type: 'array'});
                 
+                // ตรวจสอบงวดจากแถวที่ 2 ของ Sheet แรก
+                const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                const firstSheetRows = XLSX.utils.sheet_to_json(firstSheet, {header: 1, defval: ""});
+                if (firstSheetRows.length > 1) {
+                    let row2ColA = String(firstSheetRows[1][0] || "").trim();
+                    if (row2ColA.includes("เดือน")) {
+                        let pStr = row2ColA.replace("เดือน", "").trim();
+                        let match = pStr.match(/([ก-๙]+)\s*(\d+)/);
+                        if (match) {
+                            let month = match[1];
+                            let year = parseInt(match[2]);
+                            if (year < 100) year += 2500; // เช่น 69 -> 2569
+                            parsedPeriod = month + " " + year;
+                        } else {
+                            parsedPeriod = pStr; // ถ้าไม่ตรงรูปแบบให้ใช้ข้อความนั้นไปเลย
+                        }
+                    }
+                }
+
+                const periodInputElem = document.getElementById('uploadPeriod');
+                if (!periodInputElem.value.trim() && parsedPeriod) {
+                    periodInputElem.value = parsedPeriod;
+                }
+
+                const periodInput = periodInputElem.value.trim() || parsedPeriod || 'ไม่ระบุงวด';
+
                 let processedSlips = [];
                 let empCounter = 1; 
 
@@ -399,16 +416,26 @@
 
                     if (rows.length < 5) return; 
 
-                    const firstNames = rows[2]; 
-                    const lastNames = rows[3];  
+                    const firstNames = rows[2]; // แถว 3
+                    const lastNames = rows[3];  // แถว 4
 
                     for (let col = 1; col < firstNames.length; col++) {
-                        let fName = String(firstNames[col] || "").trim();
-                        let lName = String(lastNames[col] || "").trim();
+                        let r3Val = String(firstNames[col] || "").trim();
+                        let r4Val = String(lastNames[col] || "").trim();
                         
-                        if (!fName) continue;
+                        if (!r3Val) continue;
 
-                        let fullName = fName + (lName ? " " + lName : "");
+                        let fullName = "";
+                        // ตรวจสอบถ้าแถว 4 ว่าง หรือเป็นตัวเลข ให้ดึงชื่อจากแถว 3 ไปเลย
+                        if (!r4Val || !isNaN(parseFloat(r4Val))) {
+                            fullName = r3Val;
+                        } else {
+                            fullName = r3Val + " " + r4Val;
+                        }
+
+                        // ลบข้อความในวงเล็บ (ชื่อเล่น) ออกทั้งหมด
+                        fullName = fullName.replace(/\s*\([^)]*\)\s*/g, ' ').trim();
+                        fullName = fullName.replace(/\s+/g, ' '); // จัดการช่องว่างให้เหลือ 1 ช่อง
                         
                         // ตัวแปรสะสมรายวัน และ ตัวแปรแยกตามเงื่อนไขที่ผู้ใช้ระบุ
                         let totalAmount = 0; 
@@ -418,6 +445,7 @@
                         let explicitHouseRent = 0;   // ค่าเช่าบ้าน
                         
                         let explicitBankAcc = "-";   // เลข บช
+                        let explicitSoc = 0;         // ค่า ปกส
                         let explicitOtherDed = 0;    // เงินหักอื่นๆ (จาก รวมเงินเบิก)
                         let explicitNetInc = null;   // คงเหลือ
                         let explicitTotalInc = null; // รวมรายได้
@@ -425,16 +453,13 @@
                         for (let r = 4; r < rows.length; r++) {
                             // อ่านชื่อหัวข้อในคอลัมน์ A
                             let dateColValue = String(rows[r][0] || "").trim().replace(/\s+/g, ' ');
-                            
-                            // 1. ดักจับแถวที่เป็นตัวเลข 1-31 (สำหรับบวกยอดรายวัน เป็นเงินเดือนหลัก)
                             let dayNumber = parseInt(dateColValue);
                             let valStr = String(rows[r][col] || "").replace(/,/g, '');
                             let cellVal = parseFloat(valStr);
 
+                            // 1. ดักจับแถวที่เป็นตัวเลข 1-31 (สำหรับบวกยอดรายวัน เป็นเงินเดือนหลัก)
                             if (!isNaN(dayNumber) && dayNumber >= 1 && dayNumber <= 31 && dateColValue == dayNumber) {
-                                if (!isNaN(cellVal)) {
-                                    totalAmount += cellVal;
-                                }
+                                if (!isNaN(cellVal)) totalAmount += cellVal;
                             }
                             // 2. ถ้าเป็นตัวเลขเหมือนกันให้ดักจับตามคำต่างๆ
                             else if (!isNaN(cellVal)) {
@@ -446,6 +471,8 @@
                                     explicitOtherInc += cellVal;
                                 } else if (dateColValue.includes('ค่าเช่าบ้าน')) {
                                     explicitHouseRent += cellVal;
+                                } else if (dateColValue === 'ค่า ปกส' || dateColValue.includes('ปกส')) {
+                                    explicitSoc += cellVal;
                                 } else if (dateColValue === 'รวมเงินเบิก' || dateColValue.includes('รวมเงินเบิก') || dateColValue.includes('ยอดการเบิกเงิน')) {
                                     explicitOtherDed += cellVal; 
                                 } else if (dateColValue === 'คงเหลือ' || dateColValue.includes('คงเหลือ')) {
@@ -462,9 +489,10 @@
                             }
                         }
 
-                        // คำนวณรายได้ทั้งหมดที่วิเคราะห์มาได้
-                        let empTotalInc = totalAmount + explicitIncentive + explicitTeamLdr + explicitOtherInc + explicitHouseRent;
-                        let finalNet = explicitNetInc !== null ? explicitNetInc : (empTotalInc - explicitOtherDed);
+                        // คำนวณรายได้/หัก ที่วิเคราะห์มาได้
+                        let empTotalInc = explicitTotalInc !== null ? explicitTotalInc : (totalAmount + explicitIncentive + explicitTeamLdr + explicitOtherInc + explicitHouseRent);
+                        let empTotalDed = explicitOtherDed + explicitSoc;
+                        let finalNet = explicitNetInc !== null ? explicitNetInc : (empTotalInc - empTotalDed);
 
                         let existingEmpIndex = processedSlips.findIndex(emp => emp.name === fullName);
                         
@@ -476,10 +504,11 @@
                             processedSlips[existingEmpIndex].income.otherinc += explicitOtherInc;
                             processedSlips[existingEmpIndex].income.otherwel += explicitHouseRent;
                             
+                            processedSlips[existingEmpIndex].deduction.soc += explicitSoc;
                             processedSlips[existingEmpIndex].deduction.other += explicitOtherDed;
                             
                             processedSlips[existingEmpIndex].total_income += empTotalInc;
-                            processedSlips[existingEmpIndex].total_deduction += explicitOtherDed;
+                            processedSlips[existingEmpIndex].total_deduction += empTotalDed;
                             processedSlips[existingEmpIndex].net_income += finalNet;
                             
                             if (explicitBankAcc !== "-") {
@@ -490,13 +519,17 @@
                             empCounter++;
 
                             // สร้างสลิป
-                            let newSlip = createEmptySlipObj(empId, fullName, periodInput, totalAmount, explicitOtherDed, finalNet, explicitBankAcc);
+                            let newSlip = createEmptySlipObj(empId, fullName, periodInput, totalAmount, explicitBankAcc);
                             
                             newSlip.income.incentive = explicitIncentive;
                             newSlip.income.teamldr = explicitTeamLdr;
                             newSlip.income.otherinc = explicitOtherInc;
                             newSlip.income.otherwel = explicitHouseRent;
+                            newSlip.deduction.soc = explicitSoc;
+                            newSlip.deduction.other = explicitOtherDed;
                             newSlip.total_income = empTotalInc;
+                            newSlip.total_deduction = empTotalDed;
+                            newSlip.net_income = finalNet;
 
                             processedSlips.push(newSlip);
                         }
@@ -526,7 +559,7 @@
         });
 
         // ฟังก์ชันสร้าง Object โครงสร้างสลิปเปล่า
-        function createEmptySlipObj(empId, name, period, baseIncome, otherDed, netInc, bankAcc) {
+        function createEmptySlipObj(empId, name, period, baseIncome, bankAcc) {
             return {
                 id: Date.now().toString() + Math.floor(Math.random() * 1000),
                 period: period,
@@ -541,7 +574,7 @@
                     bonus: 0, teamldr: 0, otherwel: 0, otherinc: 0
                 },
                 deduction: {
-                    tax: 0, soc: 0, other: otherDed
+                    tax: 0, soc: 0, other: 0
                 },
                 acc: { inc: 0, tax: 0, soc: 0 },
                 config: { 
@@ -551,8 +584,8 @@
                 },
                 bank_acc: bankAcc,
                 total_income: baseIncome,
-                total_deduction: otherDed,
-                net_income: netInc
+                total_deduction: 0,
+                net_income: baseIncome
             };
         }
 
