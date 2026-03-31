@@ -2,1093 +2,804 @@
 <html lang="th">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Treatment 2PS</title>
-    
-    <!-- Tailwind CSS -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>2PS SERVICE - ระบบจัดการสลิปเงินเดือน (Payslip System)</title>
+    <!-- Tailwind CSS สำหรับ UI หลัก -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
-                    screens: {
-                        'xs': '475px',
-                    }
-                }
-            }
+    <!-- html2pdf.js สำหรับสร้าง PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <!-- SheetJS สำหรับอ่านไฟล์ Excel -->
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.0/package/dist/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <style>
+        body { font-family: 'Sarabun', sans-serif; background-color: #f3f4f6; }
+        
+        /* สไตล์เฉพาะสำหรับตัวสลิปเงินเดือน (ให้เหมือนต้นฉบับ) */
+        .payslip-container {
+            width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px 40px;
+            color: #000;
         }
-    </script>
-    
-    <!-- Lucide Icons -->
-    <script src="https://unpkg.com/lucide@latest"></script>
-    
-    <!-- SheetJS (XLSX) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
-    
-    <!-- Chart.js & Datalabels Plugin -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
-    
-    <!-- Firebase SDKs (v9 modular) -->
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-app.js";
-        import { getAuth } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-auth.js";
-        import { 
-            getDatabase, ref, set, get, remove, update, onValue, serverTimestamp as rtdbServerTimestamp 
-        } from "https://www.gstatic.com/firebasejs/9.15.0/firebase-database.js";
-
-        const rtdbConfig = {
-          apiKey: "AIzaSyA6Ws7wHAjgjsCZcJmg7z_5_FQXgDcI4TI",
-          authDomain: "nybtaoperation.firebaseapp.com",
-          databaseURL: "https://nybtaoperation-default-rtdb.asia-southeast1.firebasedatabase.app/",
-          projectId: "nybtaoperation",
-          storageBucket: "nybtaoperation.firebasestorage.app",
-          messagingSenderId: "382153747211",
-          appId: "1:382153747211:web:217b1fd6e409b0fc27d00e",
-          measurementId: "G-V6CQ4E4CKS"
-        };
+        .slip-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 10px; }
+        .logo-image { height: 60px; object-fit: contain; }
+        .title-text { font-size: 24px; font-weight: bold; color: #1e3a8a; }
+        .confidential-box { border: 2px solid red; color: red; padding: 5px 20px; font-weight: bold; border-radius: 5px; font-size: 14px; }
         
-        let mainApp, rtdb, auth;
-        try {
-            mainApp = initializeApp(rtdbConfig);
-            auth = getAuth(mainApp);
-            rtdb = getDatabase(mainApp);
-            console.log("Firebase Services Initialized");
-        } catch (e) {
-            console.error("Firebase Init Error:", e);
-            document.getElementById('app-root').innerHTML = `<div class="p-4 text-red-600">Error: ${e.message}</div>`;
-        }
-
-        let loggedInUser = null, permissions = null, activeTab = 'operation', cars = [], isOnline = false;
-        let dashboardChart = null; // Global variable for chart instance
-        let isSeedingComplete = false; // Flag for login screen
+        table.slip-table { width: 100%; border-collapse: collapse; margin-bottom: 5px; font-size: 11px; text-align: center; }
+        table.slip-table th, table.slip-table td { border: 1px solid #a0aec0; padding: 4px; }
         
-        const navItems = [
-            { id: 'operation', label: 'Operation', icon: 'Wrench', mobileLabel: 'Oper.' },
-            { id: 'search', label: 'ค้นหาข้อมูล', icon: 'Search', mobileLabel: 'Search' },
-            { id: 'dashboard', label: 'Dashboard', icon: 'LayoutDashboard', mobileLabel: 'Dash.' },
-            { id: 'product', label: 'PRODUCT', icon: 'Database', mobileLabel: 'Prod.' },
-            { id: 'sequence', label: 'Sequence', icon: 'Columns', mobileLabel: 'Seq.' },
-            { id: 'admin', label: 'Admin', icon: 'UserCog', mobileLabel: 'Admin' },
-        ];
-
-        // *** DEFAULT SLOTS (Used as fallback or reset base) ***
-        window.DEFAULT_PRODUCT_SLOTS = [
-            { id: 'P0', t: '07:00-09:00', s: [7,0], e: [9,0], color: 'bg-gray-100' },
-            { id: 'P1', t: '09:10-10:30', s: [9,10], e: [10,30], color: 'bg-purple-100' },
-            { id: 'P2', t: '10:40-12:30', s: [10,40], e: [12,30], color: 'bg-sky-100' },
-            { id: 'P3', t: '13:30-15:30', s: [13,30], e: [15,30], color: 'bg-green-100' },
-            { id: 'P4', t: '15:40-18:00', s: [15,40], e: [18,0], color: 'bg-red-100' },
-            { id: 'P5', t: '18:30-20:30', s: [18,30], e: [20,30], color: 'bg-orange-100' },
-            { id: 'P6', t: '20:40-22:00', s: [20,40], e: [22,0], color: 'bg-yellow-100' }
-        ];
-        // *** ACTIVE SLOTS (Mutable, loaded per day) ***
-        window.activeProductSlots = JSON.parse(JSON.stringify(window.DEFAULT_PRODUCT_SLOTS));
+        .bg-blue-dark { background-color: #2c3e50; color: white; font-weight: bold; }
+        .bg-blue-light { background-color: #e6f2ff; font-weight: bold; }
+        .text-left { text-align: left !important; padding-left: 8px !important; }
+        .text-right { text-align: right !important; padding-right: 8px !important; }
         
-        // --- Excel Column Mappings (Used for Upload and Export) ---
-        const EXCEL_HEADERS = [
-            { key: 'vin', label: 'VIN' }, { key: 'priority', label: 'Priority' }, { key: 'model', label: 'Model' }, { key: 'color', label: 'Color' },
-            { key: 'targetTreatmentDate', label: 'Target Treatment date' }, { key: 'treatmentDate', label: 'Treatment Date' },
-            { key: 'responsibleTreatment', label: 'Responsible Treatment' }, { key: 'ngAlloyWheelFR', label: 'NG Alloy wheelFR' },
-            { key: 'ngAlloyWheelFL', label: 'NG Alloy wheelFL' }, { key: 'ngAlloyWheelRR', label: 'NG Alloy wheelRR' },
-            { key: 'ngAlloyWheelRL', label: 'NG Alloy wheelRL' }, { key: 'replaceAlloyWheelDate', label: 'Replace Alloy wheel Date' },
-            { key: 'alloyWheelETADate', label: 'Alloy wheel ETA Date' }, { key: 'windshield', label: 'Windshield' },
-            { key: 'rearPillow', label: 'Rear Pillow' }, { key: 'doorPanelFR', label: 'Door panelFR' },
-            { key: 'doorPanelFL', label: 'Door panelFL' }, { key: 'doorPanelRR', label: 'Door panelRR' },
-            { key: 'doorPanelRL', label: 'Door panelRL' }, { key: 'headLightLH', label: 'Head lightLH' },
-            { key: 'headLightRH', label: 'Head lightRH' }, { key: 'logoF', label: 'LOGOF' },
-            { key: 'logoR', label: 'LOGOR' }, { key: 'repairDateByREVER', label: 'Repair dateBy REVER' },
-            { key: 'otherNG', label: 'Other NG' }, { key: 'otherHeavyNGFinal', label: 'Other HEAVY NGFinal' },
-            // Add custom tracking fields
-            { key: 'status', label: 'Status' }, 
-            { key: 'interiorTimestamp', label: 'Interior Date' }, { key: 'interiorBy', label: 'Interior By' },
-            { key: 'polishTimestamp', label: 'Polish Date' }, { key: 'polishBy', label: 'Polish By' }
-        ];
-
-        // *** Daily Report Headers for Export ***
-        const DAILY_REPORT_HEADERS = [
-            { key: 'vin', label: 'VIN' }, 
-            { key: 'model', label: 'Model' }, 
-            { key: 'color', label: 'Color' },
-            { key: 'treatmentDate', label: 'วันที่ตามแผน (Treatment Date)' },
-            { key: 'polishTimestamp', label: 'วันที่/เวลา ขัดสี (Actual)' }, 
-            { key: 'interiorBy', label: 'ผู้บันทึกภายใน' },
-            { key: 'polishBy', label: 'ผู้ตรวจสอบขัด' },
-            { key: 'status', label: 'สถานะ' }
-        ];
-
-        // --- Helper Functions (Global) ---
-        window.getJsDateFromExcel = (s) => {
-             if (!s) return null;
-             
-             // 1. Handle Excel Serial Number (as number or string)
-             const numericS = Number(s);
-             if (!isNaN(numericS) && numericS > 25569 && numericS < 2958465) {
-                 return new Date(Math.round((numericS - 25569) * 864e5));
-             }
-             
-             // 2. Handle Text date formats
-             if (typeof s === 'string' && s.trim() !== '') { 
-                 const d = new Date(s); 
-                 // Try parsing common formats (07-Nov-25, 11/7/2025)
-                 if (!isNaN(d.getTime())) return d; 
-             }
-             return null;
-        };
-
-        window.formatExcelDate = (s) => {
-            const d = window.getJsDateFromExcel(s);
-            if (d) {
-                 try {
-                    return new Intl.DateTimeFormat('en-GB', {
-                        day: '2-digit', month: 'short', year: 'numeric', timeZone: 'UTC'
-                    }).format(d).replace(/ /g, '-');
-                } catch (e) { return s; }
-            }
-            return s || '-';
-        };
-
-        window.timestampToDatetimeLocal = (ts) => {
-            if(!ts)return'';try{const d=new Date(ts);return(new Date(d.getTime()-d.getTimezoneOffset()*6e4)).toISOString().slice(0,16)}catch(e){return''}
-        };
-        
-        // MODIFIED: Add new status
-        window.getStatusClass = (s) => ({
-            'checked':'bg-green-100 text-green-800',
-            'waiting_final':'bg-blue-100 text-blue-800',
-            'waiting_interior':'bg-pink-100 text-pink-800', // NEW
-            'waiting_polish':'bg-yellow-100 text-yellow-800'
-        }[s]||'bg-gray-100 text-gray-800');
-        
-        // MODIFIED: Add new status
-        window.formatStatus = (s) => ({
-            'checked':'ตรวจสอบแล้ว',
-            'waiting_final':'รอ Final',
-            'waiting_interior':'รอภายใน', // NEW
-            'waiting_polish':'รอขัด'
-        }[s]||'Remeaning');
-
-        window.formatDateTime = (ts) => {
-            if (!ts) return '-';
-            try {
-                return new Date(ts).toLocaleString('th-TH', { 
-                    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' 
-                });
-            } catch (e) { return '-'; }
-        };
-        window.formatDateOnly = (dateString) => {
-             if (!dateString) return '';
-             try {
-                 const d = new Date(dateString);
-                 return d.toLocaleDateString('th-TH', { year: 'numeric', month: 'short', day: 'numeric' });
-             } catch (e) { return dateString; }
-        };
-        
-        // *** Export Daily Report Function (Combines Plan & Actual for robust reporting) ***
-        window.exportDailyReportToExcel = (data, monthStr) => {
-            if (!data || data.length === 0) {
-                window.renderModal("ไม่พบข้อมูลสำหรับการส่งออกในเดือนนี้", 'error');
-                return;
-            }
-
-            try {
-                const wb = XLSX.utils.book_new();
-                const groupedByDay = {};
-
-                data.forEach(item => {
-                    // Priority 1: Group by Treatment Date (Plan)
-                    let dateToGroup = window.getJsDateFromExcel(item.treatmentDate);
-                    // Priority 2: Fallback to Polish Timestamp (Actual) if Plan is missing
-                    if (!dateToGroup && item.polishTimestamp) {
-                        dateToGroup = new Date(item.polishTimestamp);
-                    }
-
-                    if (dateToGroup) {
-                        const dateStr = dateToGroup.toLocaleDateString('th-TH', { 
-                            day: '2-digit', month: 'short', year: 'numeric' 
-                        }).replace(/\s/g, '-');
-                        
-                        if (!groupedByDay[dateStr]) groupedByDay[dateStr] = [];
-                        groupedByDay[dateStr].push(item);
-                    }
-                });
-                
-                const sortedDates = Object.keys(groupedByDay).sort((a, b) => {
-                    const yearA = parseInt(a.substring(a.length - 4), 10);
-                    const dayA = parseInt(a.substring(0, 2), 10);
-                    const yearB = parseInt(b.substring(b.length - 4), 10);
-                    const dayB = parseInt(b.substring(0, 2), 10);
-                    if (yearA !== yearB) return yearA - yearB;
-                    return dayA - dayB;
-                });
-
-                sortedDates.forEach(dateStr => {
-                    const dayData = groupedByDay[dateStr];
-                    dayData.sort((a, b) => (a.polishTimestamp || 0) - (b.polishTimestamp || 0));
-
-                    const sheetData = dayData.map(item => {
-                        const row = {};
-                        DAILY_REPORT_HEADERS.forEach(h => {
-                            let value = item[h.key];
-                            if (h.key.toLowerCase().includes('timestamp') && value) {
-                                value = window.formatDateTime(value);
-                            } else if (h.key === 'treatmentDate') {
-                                value = window.formatExcelDate(value);
-                            } else if (h.key === 'status') {
-                                value = window.formatStatus(value);
-                            } else {
-                                value = value || '-';
-                            }
-                            row[h.label] = value;
-                        });
-                        return row;
-                    });
-
-                    const ws = XLSX.utils.json_to_sheet(sheetData);
-                    const sheetName = dateStr.length > 31 ? dateStr.substring(0, 31) : dateStr;
-                    XLSX.utils.book_append_sheet(wb, ws, sheetName);
-                });
-
-                XLSX.writeFile(wb, `Daily_Report_Production_${monthStr.replace('-', '_')}.xlsx`);
-            } catch (e) {
-                console.error("Export failed:", e);
-                window.renderModal("การส่งออกล้มเหลว: " + e.message, 'error');
-            }
-        };
-        
-        // *** MODIFIED: Export Product Table Function with VIN Details ***
-        window.exportProductTabToExcel = async (dateStr) => {
-            if (!dateStr) { window.renderModal("กรุณาเลือกวันที่ก่อน Export", 'error'); return; }
-            try {
-                let dailyData = {};
-                try { dailyData = (await get(ref(rtdb, `daily_targets/${dateStr}`))).val() || {}; } catch(e) {}
-                
-                // Use loaded slots or default if missing in daily data
-                const slotsToUse = dailyData.slots || window.DEFAULT_PRODUCT_SLOTS;
-
-                const start = new Date(dateStr + 'T00:00:00'), end = new Date(dateStr + 'T23:59:59');
-                const counts = {}, vinsInSlots = {}; 
-                slotsToUse.forEach(s => { counts[s.id] = 0; vinsInSlots[s.id] = []; });
-                
-                // MODIFIED LOGIC: Count if 'checked' OR 'waiting_final' OR 'waiting_interior' AND polishTimestamp is within the day
-                cars.filter(c=>(c.status==='checked' || c.status==='waiting_final' || c.status==='waiting_interior')&&c.polishTimestamp&&new Date(c.polishTimestamp)>=start&&new Date(c.polishTimestamp)<=end)
-                    .forEach(c=>{ 
-                        const m = new Date(c.polishTimestamp).getHours()*60+new Date(c.polishTimestamp).getMinutes(); 
-                        for(const s of slotsToUse) if(m>=s.s[0]*60+s.s[1]&&m<=s.e[0]*60+s.e[1]){ 
-                            counts[s.id]++; 
-                            vinsInSlots[s.id].push(c.vin); // Collect VINs for each slot
-                            break; 
-                        } 
-                    });
-
-                // 1. Create Summary Sheet Data
-                const summaryData = [
-                    { Metric: 'TARGET', ...slotsToUse.reduce((acc, s) => ({ ...acc, [s.id]: parseInt(dailyData[`target_${s.id}`]) || 0 }), {}) },
-                    { Metric: 'ACTUAL', ...slotsToUse.reduce((acc, s) => ({ ...acc, [s.id]: counts[s.id] || 0 }), {}) },
-                    { Metric: 'BALANCE', ...slotsToUse.reduce((acc, s) => ({ ...acc, [s.id]: (counts[s.id]||0) - (parseInt(dailyData[`target_${s.id}`])||0) }), {}) },
-                    { Metric: '' } // Empty row spacer
-                ];
-
-                // 2. Add Detailed VIN List Section
-                summaryData.push({ Metric: '--- รายละเอียด VIN ในแต่ละช่วงเวลา ---' });
-                
-                // Find max number of cars in any slot to determine rows needed
-                const maxCarsInSlot = Math.max(0, ...Object.values(vinsInSlots).map(v => v.length)); // Use Math.max(0, ...)
-                
-                for (let i = 0; i < maxCarsInSlot; i++) {
-                    const row = { Metric: `คันที่ ${i + 1}` };
-                    slotsToUse.forEach(s => {
-                        row[s.id] = vinsInSlots[s.id][i] || '';
-                    });
-                    summaryData.push(row);
-                }
-
-                const ws = XLSX.utils.json_to_sheet(summaryData);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, `Product_${dateStr}`);
-                XLSX.writeFile(wb, `Product_Treatment_${dateStr}.xlsx`);
-
-            } catch (e) {
-                console.error("Product Export Error:", e);
-                window.renderModal("Export ล้มเหลว: " + e.message, 'error');
-            }
-        };
-
-        window.handleSequenceExport = (statusId) => {
-            const filteredCars = cars.filter(c => c.status === statusId);
-            window.exportToExcel(filteredCars, `Sequence_Report_${statusId}`);
-        };
-        
-        window.exportToExcel = (data, filename, headerMap = EXCEL_HEADERS) => {
-            if (!data || data.length === 0) {
-                window.renderModal("ไม่พบข้อมูลสำหรับการส่งออก", 'error');
-                return;
-            }
-            try {
-                const sheetData = data.map(item => {
-                    const row = {};
-                    headerMap.forEach(h => {
-                        let value = item[h.key];
-                        if (h.key.toLowerCase().includes('date')) {
-                            value = window.formatExcelDate(value); 
-                        } else if (h.key.toLowerCase().includes('timestamp') && value) {
-                             value = window.formatDateTime(value);
-                        }
-                        row[h.label] = value || '';
-                    });
-                    return row;
-                });
-
-                const ws = XLSX.utils.json_to_sheet(sheetData);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "Report");
-                XLSX.writeFile(wb, `${filename}_${new Date().toISOString().slice(0, 10)}.xlsx`);
-            } catch (e) {
-                console.error("Export failed:", e);
-                window.renderModal("การส่งออกล้มเหลว: " + e.message, 'error');
-            }
-        };
-
-
-        const appRoot = document.getElementById('app-root');
-        
-        const updateConnectionStatusUI = () => {
-            const el = document.getElementById('connection-status'), icon = document.getElementById('connection-icon'), text = document.getElementById('connection-text');
-            if (!el) return;
-            if (isOnline) {
-                text.textContent = 'ออนไลน์'; el.className = 'fixed top-2 right-2 z-50 px-2 py-1 rounded-full shadow-md flex items-center space-x-1 text-xs font-medium bg-green-100 text-green-800 transition-all duration-300'; icon.setAttribute('data-lucide', 'wifi');
-            } else {
-                text.textContent = 'ออฟไลน์'; el.className = 'fixed top-2 right-2 z-50 px-2 py-1 rounded-full shadow-md flex items-center space-x-1 text-xs font-medium bg-red-100 text-red-800 transition-all duration-300'; icon.setAttribute('data-lucide', 'wifi-off');
-            }
-            lucide.createIcons();
-        };
-
-        window.renderModal = (msg, type='success') => {
-            document.getElementById('app-modal')?.remove();
-            document.body.insertAdjacentHTML('beforeend', `
-                <div id="app-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] px-4 animate-fade-in">
-                    <div class="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full animate-scale-in">
-                        <div class="flex items-center gap-3 mb-4 text-${type==='success'?'green':'red'}-600">
-                            <i data-lucide="${type==='success'?'CheckCircle':'XCircle'}" class="w-6 h-6"></i>
-                            <h3 class="font-semibold text-gray-900">${type==='success'?'สำเร็จ':'แจ้งเตือน'}</h3>
-                        </div>
-                        <p class="text-gray-600 mb-6">${msg}</p>
-                        <button onclick="this.closest('#app-modal').remove()" class="w-full py-3 bg-gray-900 text-white rounded-xl font-medium">ตกลง</button>
-                    </div>
-                </div>
-            `);
-            lucide.createIcons();
-            setTimeout(() => document.getElementById('app-modal')?.remove(), 3000);
-        };
-
-        window.renderConfirmationModal = (title, msg, onConfirm) => {
-            document.getElementById('app-confirm-modal')?.remove();
-            window._tempConfirmCallback = onConfirm;
-            document.body.insertAdjacentHTML('beforeend', `
-                <div id="app-confirm-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] px-4 animate-fade-in">
-                    <div class="bg-white p-6 rounded-2xl shadow-xl max-w-sm w-full animate-scale-in">
-                        <div class="flex items-start gap-4 mb-4">
-                            <div class="p-2 bg-yellow-100 rounded-full shrink-0"><i data-lucide="AlertTriangle" class="w-6 h-6 text-yellow-600"></i></div>
-                            <div><h3 class="font-semibold text-gray-900">${title}</h3><p class="text-sm text-gray-600 mt-1">${msg}</p></div>
-                        </div>
-                        <div class="flex gap-3 mt-6">
-                            <button onclick="this.closest('#app-confirm-modal').remove()" class="flex-1 py-2.5 bg-gray-100 text-gray-700 rounded-xl font-medium">ยกเลิก</button>
-                            <button id="confirm-proceed-btn" class="flex-1 py-2.5 bg-gray-900 text-white rounded-xl font-medium">ยืนยัน</button>
-                        </div>
-                    </div>
-                </div>
-            `);
-            lucide.createIcons();
-            document.getElementById('confirm-proceed-btn').onclick = () => { 
-                if (window._tempConfirmCallback) window._tempConfirmCallback(); 
-                document.getElementById('app-confirm-modal')?.remove();
-                delete window._tempConfirmCallback;
-            };
-        };
-        
-        const renderLoadingSpinner = (full=true) => full ? `<div class="flex justify-center items-center h-full"><i data-lucide="Loader2" class="w-10 h-10 text-blue-600 animate-spin"></i></div>` : `<i data-lucide="Loader2" class="w-5 h-5 animate-spin"></i>`;
-        
-        // --- AUTH & LOGIN Functions ---
-        
-        const renderLoginScreen = (error = null) => {
-            const isRemembered = localStorage.getItem('treatment2ps_remember') === 'true';
-            const savedUser = isRemembered ? (localStorage.getItem('treatment2ps_user') || '') : '';
-            const savedPass = isRemembered ? (localStorage.getItem('treatment2ps_pass') || '') : '';
-
-            const formContentHTML = isSeedingComplete ? `
-                <form id="login-form" class="space-y-6">
-                    <div>
-                        <label for="username" class="block text-sm font-medium text-gray-700">Username</label>
-                        <input id="username" name="username" type="text" required class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500" placeholder="" value="${savedUser}">
-                    </div>
-                    <div>
-                        <label for="password" class="block text-sm font-medium text-gray-700">Password</label>
-                        <input id="password" name="password" type="password" required class="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-xl shadow-sm placeholder-gray-400 focus:outline-none focus:ring-blue-500 focus:border-blue-500" placeholder="" value="${savedPass}">
-                    </div>
-                    <div class="flex items-center">
-                        <input id="remember-me" name="remember-me" type="checkbox" class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded" ${isRemembered ? 'checked' : ''}>
-                        <label for="remember-me" class="ml-2 block text-sm text-gray-900">จำฉันในระบบ</label>
-                    </div>
-                    ${error ? `<p class="text-sm text-center text-red-600">${error}</p>` : ''}
-                    <button id="login-submit-btn" type="submit" class="w-full flex justify-center py-3 px-4 border border-transparent rounded-xl shadow-sm text-base font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all">
-                        เข้าสู่ระบบ
-                    </button>
-                </form>
-            ` : `
-                <div class="flex flex-col items-center">
-                    <i data-lucide="Loader2" class="w-8 h-8 text-blue-500 animate-spin"></i>
-                    <p class="mt-4 text-gray-600">กำลังเตรียมข้อมูลเริ่มต้น...</p>
-                </div>
-            `;
-            
-            appRoot.innerHTML = `
-                <div class="flex items-center justify-center min-h-screen bg-gray-100 p-4">
-                    <div class="w-full max-w-md p-8 space-y-6 bg-white rounded-2xl shadow-xl border border-gray-100">
-                        <div class="flex flex-col items-center">
-                            <i data-lucide="Car" class="w-12 h-12 text-blue-600"></i>
-                            <h2 class="mt-4 text-2xl font-bold text-gray-900">Treatment 2PS Login</h2>
-                        </div>
-                        ${formContentHTML}
-                    </div>
-                </div>
-            `;
-            lucide.createIcons();
-            
-            if (isSeedingComplete) {
-                document.getElementById('login-form')?.addEventListener('submit', handleLogin);
-            }
-        };
-
-        const handleLogin = async (e) => {
-            e.preventDefault();
-            const btn = document.getElementById('login-submit-btn');
-            btn.disabled = true;
-            btn.innerHTML = renderLoadingSpinner(false);
-            lucide.createIcons();
-
-            const username = e.target.username.value.toLowerCase();
-            const password = e.target.password.value;
-            
-            try {
-                const userRef = ref(rtdb, 'users/' + username);
-                const userSnap = await get(userRef);
-
-                if (!userSnap.exists()) {
-                    renderLoginScreen("ไม่พบผู้ใช้งานนี้");
-                    return;
-                }
-
-                const userData = userSnap.val();
-                if (userData.password !== password) {
-                    renderLoginScreen("รหัสผ่านไม่ถูกต้อง");
-                    return;
-                }
-
-                const rememberMe = document.getElementById('remember-me')?.checked;
-                if (rememberMe) {
-                    localStorage.setItem('treatment2ps_remember', 'true');
-                    localStorage.setItem('treatment2ps_user', username);
-                    localStorage.setItem('treatment2ps_pass', password);
-                } else {
-                    localStorage.removeItem('treatment2ps_remember');
-                    localStorage.removeItem('treatment2ps_user');
-                    localStorage.removeItem('treatment2ps_pass');
-                }
-
-                const roleRef = ref(rtdb, 'roles/' + userData.role);
-                const roleSnap = await get(roleRef);
-
-                if (!roleSnap.exists()) {
-                    renderLoginScreen("ไม่พบสิทธิ์ (Role) ของผู้ใช้งานนี้");
-                    return;
-                }
-
-                loggedInUser = { username, role: userData.role };
-                permissions = roleSnap.val();
-                
-                const firstAvailableTab = navItems.find(item => permissions[item.id])?.id || 'dashboard';
-                activeTab = firstAvailableTab;
-                setupCarDataListener();
-                renderAppLayout();
-
-            } catch (err) {
-                console.error("Login error:", err);
-                renderLoginScreen("เกิดข้อผิดพลาดในการล็อคอิน");
-            }
-        };
-
-        const handleLogout = () => {
-            loggedInUser = null;
-            permissions = null;
-            cars = [];
-            if (carDataUnsubscribe) carDataUnsubscribe();
-            renderLoginScreen(); 
-        };
-
-        const renderAppLayout = () => {
-            appRoot.innerHTML = `
-                <div id="connection-status"><i id="connection-icon" class="w-3 h-3"></i><span id="connection-text"></span></div>
-                <div class="flex h-screen bg-gray-50">
-                    <nav class="hidden md:flex w-64 bg-white border-r border-gray-200 flex-col fixed h-full z-10">
-                        <div class="p-6 border-b border-gray-100 flex items-center gap-3">
-                            <div class="p-2 bg-blue-600 rounded-lg"><i data-lucide="Car" class="w-6 h-6 text-white"></i></div>
-                            <h1 class="text-xl font-bold text-gray-900">Treatment 2PS</h1>
-                        </div>
-                        <div class="flex-1 py-4 px-3 space-y-1 overflow-y-auto">
-                            ${navItems.filter(i=>permissions[i.id]).map(i => `<button data-tab-id="${i.id}" class="nav-button w-full flex items-center gap-3 px-4 py-3 rounded-xl text-left transition-all ${activeTab===i.id?'bg-blue-50 text-blue-700 font-semibold':'text-gray-600 hover:bg-gray-50'}"><i data-lucide="${i.icon}" class="w-5 h-5"></i><span>${i.label}</span></button>`).join('')}
-                        </div>
-                        <div class="p-4 border-t border-gray-100"><button id="logout-btn" class="w-full flex items-center gap-3 px-4 py-3 text-red-600 hover:bg-red-50 rounded-xl transition-colors"><i data-lucide="LogOut" class="w-5 h-5"></i><span class="font-medium">ออกจากระบบ</span></button></div>
-                    </nav>
-                    <main id="app-content" class="flex-1 md:ml-64 overflow-y-auto h-full pb-16 md:pb-0">${renderLoadingSpinner()}</main>
-                    <nav class="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-gray-200 z-20 flex h-16 justify-around items-center px-2 pb-safe">
-                        ${navItems.filter(i=>permissions[i.id]).map(i => `<button data-tab-id="${i.id}" class="nav-button flex flex-col items-center justify-center w-full h-full gap-1 ${activeTab===i.id?'text-blue-600':'text-gray-400'}"><i data-lucide="${i.icon}" class="w-6 h-6"></i><span class="text-[10px] font-medium">${i.mobileLabel||i.label}</span></button>`).join('')}
-                    </nav>
-                </div>
-            `;
-            lucide.createIcons(); updateConnectionStatusUI();
-            document.querySelectorAll('.nav-button').forEach(b => b.onclick = (e) => { activeTab=e.currentTarget.dataset.tabId; renderAppLayout(); });
-            document.getElementById('logout-btn').onclick = handleLogout; 
-            renderContent();
-        };
-
-        window.confirmSaveInterior = (vin) => {
-            const car = cars.find(c => c.vin === vin);
-            if (!car) { window.renderModal("ไม่พบข้อมูลรถยนต์", 'error'); return; }
-            window.renderConfirmationModal('ยืนยันการบันทึก "ภายใน"', `คุณต้องการบันทึกสถานะ "ภายใน" สำหรับ VIN: ${car.vin} (Model: ${car.model}) ใช่หรือไม่?`, () => window.handleSaveInterior(vin));
-        };
-
-        window.confirmSavePolish = (vin) => {
-            const car = cars.find(c => c.vin === vin);
-            if (!car) { window.renderModal("ไม่พบข้อมูลรถยนต์", 'error'); return; }
-            window.renderConfirmationModal('ยืนยันการบันทึก "ขัด"', `คุณต้องการบันทึกสถานะ "ขัด" สำหรับ VIN: ${car.vin} (Model: ${car.model}) ใช่หรือไม่?`, () => window.handleSavePolish(vin));
-        };
-        
-        // MODIFIED: Handle new workflow logic
-        window.handleSaveInterior = async (vin) => { 
-            try{ 
-                const car = cars.find(c => c.vin === vin);
-                const payload = { 
-                    interiorTimestamp: rtdbServerTimestamp(), 
-                    interiorBy: loggedInUser.username 
-                };
-                // If polish is already done, move to waiting_final
-                if (car && car.polishTimestamp) {
-                    payload.status = 'waiting_final';
-                } else {
-                    payload.status = 'waiting_polish';
-                }
-                await update(ref(rtdb,`treatment_cars/${vin}`), payload); 
-                renderModal('บันทึกสำเร็จ') 
-            }catch(e){renderModal('ผิดพลาด','error')} 
-        };
-        
-        // MODIFIED: Handle new workflow logic
-        window.handleSavePolish = async (vin) => { 
-            try{ 
-                const car = cars.find(c => c.vin === vin);
-                const payload = {
-                    polishTimestamp: rtdbServerTimestamp(),
-                    polishBy: loggedInUser.username
-                };
-                // If interior is already done, move to waiting_final
-                if (car && car.interiorTimestamp) {
-                    payload.status = 'waiting_final';
-                } else {
-                    payload.status = 'waiting_interior'; // NEW STATUS
-                }
-                await update(ref(rtdb,`treatment_cars/${vin}`), payload); 
-                renderModal('บันทึกสำเร็จ') 
-            }catch(e){renderModal('ผิดพลาด','error')} 
-        };
-
-        window.handleConfirmFinal = async (vin) => { 
-            try{ await update(ref(rtdb,`treatment_cars/${vin}`),{ 
-                status:'checked',
-            }); renderModal('บันทึกสำเร็จ') }catch(e){renderModal('ผิดพลาด','error')} 
-        };
-
-        // MODIFIED: Cancel polish (from waiting_polish) only clears interior data
-        window.handleCancelPolish = async (vin) => { 
-            try{ await update(ref(rtdb,`treatment_cars/${vin}`),{ status:'remaining', interiorTimestamp:null, interiorBy: null }); renderModal('ยกเลิกสำเร็จ') }catch(e){renderModal('ผิดพลาด','error')} 
-        };
-        
-        // NEW: Cancel interior (from waiting_interior) only clears polish data
-        window.handleCancelInterior = async (vin) => { 
-            try{ await update(ref(rtdb,`treatment_cars/${vin}`),{ status:'remaining', polishTimestamp:null, polishBy: null }); renderModal('ยกเลิกสำเร็จ') }catch(e){renderModal('ผิดพลาด','error')} 
-        };
-
-        // MODIFIED: Cancel final (from waiting_final) reverts to waiting_polish and clears polish data
-        window.handleCancelFinal = async (vin) => { 
-            try{ await update(ref(rtdb,`treatment_cars/${vin}`),{ status:'waiting_polish', polishTimestamp:null, polishBy: null }); renderModal('ยกเลิกสำเร็จ') }catch(e){renderModal('ผิดพลาด','error')} 
-        };
-        window.handleCancelChecked = async (vin) => { 
-            try{ await update(ref(rtdb,`treatment_cars/${vin}`),{ status:'waiting_final' }); renderModal('ยกเลิกสำเร็จ') }catch(e){renderModal('ผิดพลาด','error')} 
-        };
-
-        window.handleOperationSearch = () => {
-            const t = document.getElementById('vin-search').value.toLowerCase().trim(), c = document.getElementById('operation-car-info');
-            if(!t){c.innerHTML='';return} const car=cars.find(v=>v.vin.toLowerCase().endsWith(t)); if(!car){c.innerHTML='';renderModal('ไม่พบข้อมูล','error');return}
-            
-            // MODIFIED: Independent checks for button states
-            const isInteriorDone = !!car.interiorTimestamp;
-            const isPolishDone = !!car.polishTimestamp;
-
-            c.innerHTML = `
-                <div class="bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-blue-100 space-y-4 animate-fade-in-down">
-                    <div class="flex flex-col md:flex-row justify-between gap-4"><div><h3 class="text-xl font-bold text-gray-900">${car.vin}</h3><p class="text-sm text-gray-500">${car.model} • ${car.color}</p></div><span class="self-start px-3 py-1 rounded-full text-sm font-medium ${getStatusClass(car.status)}">${formatStatus(car.status)}</span></div>
-                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm"><div class="p-3 bg-gray-50 rounded-2xl"><p class="text-gray-500 mb-1">Priority</p><p class="font-semibold">${car.priority||'-'}</p></div><div class="p-3 bg-gray-50 rounded-2xl"><p class="text-gray-500 mb-1">Target Treatment date</p><p class="font-semibold">${formatExcelDate(car.targetTreatmentDate)}</p></div></div>
-                    <div class="flex gap-3 pt-2">
-                        <button onclick="window.confirmSaveInterior('${car.vin}')" ${isInteriorDone ? 'disabled' : ''} class="flex-1 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 disabled:opacity-50 transition-all">บันทึก "ภายใน"</button>
-                        <button onclick="window.confirmSavePolish('${car.vin}')" ${isPolishDone ? 'disabled' : ''} class="flex-1 py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700 disabled:opacity-50 transition-all">บันทึก "ขัด"</button>
-                    </div>
-                </div>
-            `;
-        };
-        
-        window.handleEditSearch = () => {
-             const t = document.getElementById('vin-search-edit').value.toLowerCase().trim(), c = document.getElementById('search-car-info');
-             if(!t){c.innerHTML='';return} const car=cars.find(v=>v.vin.toLowerCase().endsWith(t)); if(!car){c.innerHTML='';renderModal('ไม่พบข้อมูล','error');return}
-             c.innerHTML = `
-                <div class="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 space-y-4">
-                    <h3 class="text-xl font-bold">${car.vin}</h3>
-                    <div class="grid grid-cols-2 gap-4 text-sm">
-                        <div><label class="block text-gray-500 mb-1">Status</label>
-                        <select id="edit-status" class="w-full p-2 bg-gray-50 rounded-xl">
-                            ${['remaining','waiting_polish','waiting_interior','waiting_final','checked'].map(s=>`<option value="${s}" ${car.status===s?'selected':''}>${formatStatus(s)}</option>`).join('')}
-                        </select>
-                        </div>
-                        <div><label class="block text-gray-500 mb-1">Treatment date (Excel)</label><input type="text" id="edit-treatment-date" value="${formatExcelDate(car.treatmentDate)}" class="w-full p-2 bg-gray-50 rounded-xl"></div>
-                        <div><label class="block text-gray-500 mb-1">Target Treatment date</label><input type="text" id="edit-target-treatment-date" value="${formatExcelDate(car.targetTreatmentDate)}" class="w-full p-2 bg-gray-50 rounded-xl"></div>
-                        <div class="col-span-2"><label class="block text-gray-500 mb-1">Polish Timestamp (เวลาขัดจริง)</label><input type="datetime-local" id="edit-polish-time" value="${timestampToDatetimeLocal(car.polishTimestamp)}" class="w-full p-2 bg-gray-50 rounded-xl"></div>
-                    </div>
-                    <button onclick="handleUpdateCar('${car.vin}')" class="w-full py-3 bg-blue-600 text-white rounded-xl font-medium">บันทึกการแก้ไข</button>
-                </div>
-             `;
-        };
-        
-        window.handleUpdateCar = async (vin) => {
-            try {
-                const s = document.getElementById('edit-status').value, td = document.getElementById('edit-treatment-date').value, ttd = document.getElementById('edit-target-treatment-date').value, pt = document.getElementById('edit-polish-time').value;
-                let updatePayload = { status: s, treatmentDate: td, targetTreatmentDate: ttd, polishTimestamp: pt ? new Date(pt).getTime() : null };
-                if (s === 'remaining') { updatePayload.interiorTimestamp = null; updatePayload.interiorBy = null; updatePayload.polishTimestamp = null; updatePayload.polishBy = null; }
-                await update(ref(rtdb,`treatment_cars/${vin}`), updatePayload); renderModal('บันทึกสำเร็จ');
-            } catch(e){renderModal('ผิดพลาด','error')}
-        };
-
-        // NEW: Render Edit Slots Modal
-        window.renderEditSlotsModal = () => {
-            document.getElementById('edit-slots-modal')?.remove();
-            const rows = window.activeProductSlots.map((s, i) => {
-                const startStr = `${String(s.s[0]).padStart(2,'0')}:${String(s.s[1]).padStart(2,'0')}`;
-                const endStr = `${String(s.e[0]).padStart(2,'0')}:${String(s.e[1]).padStart(2,'0')}`;
-                return `
-                    <div class="grid grid-cols-3 gap-2 items-center">
-                        <input type="text" id="edit-slot-id-${i}" value="${s.id}" class="p-2 border rounded-lg text-sm text-center font-bold" placeholder="ชื่อ Slot">
-                        <input type="time" id="edit-slot-start-${i}" value="${startStr}" class="p-2 border rounded-lg text-sm">
-                        <input type="time" id="edit-slot-end-${i}" value="${endStr}" class="p-2 border rounded-lg text-sm">
-                    </div>
-                `;
-            }).join('');
-
-            document.body.insertAdjacentHTML('beforeend', `
-                <div id="edit-slots-modal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[70] px-4 animate-fade-in">
-                    <div class="bg-white p-6 rounded-3xl shadow-xl max-w-md w-full animate-scale-in max-h-[90vh] flex flex-col">
-                        <div class="flex justify-between items-center mb-4 shrink-0">
-                            <h3 class="text-lg font-bold text-gray-900">แก้ไขช่วงเวลา (เฉพาะวันนี้)</h3>
-                            <button onclick="this.closest('#edit-slots-modal').remove()" class="text-gray-400 hover:text-gray-600"><i data-lucide="X" class="w-6 h-6"></i></button>
-                        </div>
-                        <div class="flex-1 overflow-y-auto space-y-3 mb-4 pr-1">
-                             <div class="grid grid-cols-3 gap-2 text-xs font-medium text-gray-500 mb-1">
-                                <div class="text-center">ชื่อ Slot</div><div class="text-center">เริ่ม</div><div class="text-center">สิ้นสุด</div>
-                            </div>
-                            ${rows}
-                        </div>
-                        <div class="flex gap-3 shrink-0">
-                             <button onclick="window.resetSlotsToDefault()" class="px-4 py-3 bg-red-100 text-red-700 rounded-xl font-medium hover:bg-red-200 flex-1">Reset</button>
-                             <button onclick="window.saveEditedSlots()" class="px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 flex-[2]">บันทึกเวลา</button>
-                        </div>
-                    </div>
-                </div>
-            `);
-            lucide.createIcons();
-        };
-
-        // NEW: Save Edited Slots (Internal to Modal)
-        window.saveEditedSlots = () => {
-            const newSlots = JSON.parse(JSON.stringify(window.activeProductSlots));
-            for(let i=0; i < newSlots.length; i++) {
-                const idVal = document.getElementById(`edit-slot-id-${i}`).value.trim();
-                const startVal = document.getElementById(`edit-slot-start-${i}`).value;
-                const endVal = document.getElementById(`edit-slot-end-${i}`).value;
-                if(idVal) newSlots[i].id = idVal;
-                if(startVal) { const [h, m] = startVal.split(':').map(Number); newSlots[i].s = [h, m]; }
-                if(endVal) { const [h, m] = endVal.split(':').map(Number); newSlots[i].e = [h, m]; }
-                // Update display time string
-                newSlots[i].t = `${String(newSlots[i].s[0]).padStart(2,'0')}:${String(newSlots[i].s[1]).padStart(2,'0')}-${String(newSlots[i].e[0]).padStart(2,'0')}:${String(newSlots[i].e[1]).padStart(2,'0')}`;
-            }
-            window.activeProductSlots = newSlots;
-            document.getElementById('edit-slots-modal')?.remove();
-            window.renderProductTableAndTarget(true); // MODIFIED: Pass true to use local slots
-        };
-        
-        // NEW: Reset Slots
-        window.resetSlotsToDefault = () => {
-             window.activeProductSlots = JSON.parse(JSON.stringify(window.DEFAULT_PRODUCT_SLOTS));
-             document.getElementById('edit-slots-modal')?.remove();
-             window.renderProductTableAndTarget(true); // MODIFIED: Pass true to use local slots
-        };
-
-        // UPDATED: Save targets AND current slots configuration
-        window.handleSaveSlotTargets = async () => {
-             const d = document.getElementById('product-date').value, u = { notes: document.getElementById('product-notes').value, slots: window.activeProductSlots };
-             document.querySelectorAll('.target-input').forEach(i=>u[`target_${i.id.split('-')[1]}`]=parseInt(i.value)||0);
-             try{await update(ref(rtdb,`daily_targets/${d}`),u);renderModal('บันทึกสำเร็จ');renderProductTableAndTarget()}catch(e){renderModal('ผิดพลาด','error')}
-        };
-
-        // MODIFIED: Accept useLocalSlots flag to prevent overwriting edited data before saving
-        window.renderProductTableAndTarget = async (useLocalSlots = false) => {
-            const date = document.getElementById('product-date')?.value; if(!date)return;
-            let data = {}; try{ data = (await get(ref(rtdb, `daily_targets/${date}`))).val() || {}; }catch(e){}
-            
-            // IMPORTANT: Only fetch slots from DB if NOT using local edited slots
-            if (!useLocalSlots) {
-                if (data.slots) {
-                    window.activeProductSlots = data.slots;
-                } else {
-                     window.activeProductSlots = JSON.parse(JSON.stringify(window.DEFAULT_PRODUCT_SLOTS));
-                }
-            }
-            
-            const counts = { total: 0 }, start = new Date(date+'T00:00:00'), end = new Date(date+'T23:59:59');
-            let totalActual = 0; // Use a dedicated summer
-            
-            // MODIFIED LOGIC: Count if 'checked' OR 'waiting_final' OR 'waiting_interior' AND polishTimestamp is within the day
-            cars.filter(c=>(c.status==='checked' || c.status==='waiting_final' || c.status==='waiting_interior')&&c.polishTimestamp&&new Date(c.polishTimestamp)>=start&&new Date(c.polishTimestamp)<=end).forEach(c=>{ 
-                const m = new Date(c.polishTimestamp).getHours()*60+new Date(c.polishTimestamp).getMinutes(); 
-                for(const s of window.activeProductSlots) if(m>=s.s[0]*60+s.s[1]&&m<=s.e[0]*60+s.e[1]){
-                    counts[s.id]=(counts[s.id]||0)+1; 
-                    totalActual++; // Only increment totalActual if it falls IN a slot
-                    break
-                } 
-            });
-            
-            let totalTarget = 0; window.activeProductSlots.forEach(s=>totalTarget+=(parseInt(data[`target_${s.id}`])||0));
-            
-            if(document.getElementById('total-display')) document.getElementById('total-display').textContent = totalActual; // Use summed total
-            if(document.getElementById('total-target-display')) document.getElementById('total-target-display').textContent = totalTarget;
-            if(document.getElementById('remeaning-display')) document.getElementById('remeaning-display').textContent = totalTarget - totalActual; // Use summed total
-            
-            const tableContainer = document.getElementById('product-table-container');
-            if (tableContainer) {
-                tableContainer.innerHTML = `
-                    <table class="w-full min-w-[600px]">
-                        <thead><tr class="border-b border-gray-100"><th class="px-4 py-3 text-left text-xs font-bold text-gray-500 uppercase w-24 sticky left-0 bg-white z-10">Metric</th>${window.activeProductSlots.map(s=>`<th class="px-4 py-3 text-center ${s.color}"><div class="text-xs font-bold text-gray-900 whitespace-nowrap">${s.id}</div><div class="text-[10px] text-gray-600 font-medium whitespace-nowrap">${s.t}</div></th>`).join('')}</tr></thead>
-                        <tbody class="divide-y divide-gray-100">${['TARGET','ACTUAL','BALANCE'].map(r=>`<tr><td class="px-4 py-3 text-xs font-bold text-gray-500 bg-white sticky left-0 z-10">${r}</td>${window.activeProductSlots.map(s=>{const t=parseInt(data[`target_${s.id}`])||0,a=counts[s.id]||0,b=a-t;if(r==='TARGET')return`<td class="p-2 ${s.color} bg-opacity-50"><input type="number" id="target-${s.id}" value="${t||''}" class="target-input w-full text-center p-2 bg-white border-0 rounded-xl focus:ring-2 focus:ring-blue-500 font-medium" placeholder="-"></td>`;if(r==='ACTUAL')return`<td class="px-4 py-3 text-center font-bold text-lg text-gray-900 ${s.color} bg-opacity-50" id="actual-${s.id}">${a}</td>`;return`<td class="px-4 py-3 text-center font-bold text-lg ${b>=0?'text-green-600':'text-red-600'} ${s.color} bg-opacity-50" id="balance-${s.id}">${b>0?'+'+b:b}</td>`}).join('')}</tr>`).join('')}</tbody>
-                    </table>
-                `;
-                document.querySelectorAll('.target-input').forEach(i=>i.oninput=e=>{ 
-                    const id=e.target.id.split('-')[1],t=parseInt(e.target.value)||0,a=parseInt(document.getElementById(`actual-${id}`)?.textContent)||0,b=a-t,el=document.getElementById(`balance-${id}`); 
-                    if(el){el.textContent=b>0?'+'+b:b; el.className=el.className.replace(/text-\w+-600/g, b>=0?'text-green-600':'text-red-600');} 
-                    
-                    let sumTarget=0, sumActual=0;
-                    document.querySelectorAll('.target-input').forEach(inp=>sumTarget+=(parseInt(inp.value)||0));
-                    window.activeProductSlots.forEach(s => sumActual += (counts[s.id] || 0)); // Recalculate based on existing counts
-
-                    if(document.getElementById('total-target-display')) document.getElementById('total-target-display').textContent=sumTarget; 
-                    if(document.getElementById('total-display')) document.getElementById('total-display').textContent = sumActual; // Update total actual
-                    if(document.getElementById('remeaning-display')) document.getElementById('remeaning-display').textContent=sumTarget-sumActual; 
-                });
-            }
-        };
-
-        window.updateDashboardChart = (monthStr) => {
-            const ctx = document.getElementById('daily-report-chart')?.getContext('2d');
-            if (!ctx || !monthStr) return;
-
-            const [year, month] = monthStr.split('-').map(Number);
-            const daysInMonth = new Date(year, month, 0).getDate();
-            const labels = Array.from({length: daysInMonth}, (_, i) => i + 1);
-            const mergedData = new Array(daysInMonth).fill(0);
-            const exportData = [];
-            const relevantVins = new Set();
-
-            cars.forEach(car => {
-                // MODIFIED LOGIC: Count if 'checked' OR 'waiting_final' OR 'waiting_interior'
-                if (car.status === 'checked' || car.status === 'waiting_final' || car.status === 'waiting_interior') {
-                     // Priority 1: Use Treatment Date (Plan) for X-axis
-                     let dateToUse = window.getJsDateFromExcel(car.treatmentDate);
-                     // Priority 2: Fallback to Polish Timestamp (Actual) if Plan is missing
-                     if (!dateToUse && car.polishTimestamp) {
-                          dateToUse = new Date(car.polishTimestamp);
-                     }
-                     
-                     if (dateToUse && dateToUse.getMonth() === month - 1 && dateToUse.getFullYear() === year) {
-                          mergedData[dateToUse.getDate() - 1] += 1;
-                          if (!relevantVins.has(car.vin)) { exportData.push(car); relevantVins.add(car.vin); }
-                     }
-                }
-            });
-            
-            const monthlyTotal = mergedData.reduce((sum, val) => sum + val, 0);
-            const monthName = new Intl.DateTimeFormat('th-TH', { month: 'long' }).format(new Date(year, month - 1));
-            if (document.getElementById('monthly-title')) document.getElementById('monthly-title').textContent = `ยอดเดือน ${monthName}`;
-            if (document.getElementById('monthly-total')) document.getElementById('monthly-total').textContent = monthlyTotal;
-            
-            const exportBtn = document.getElementById('dashboard-export-btn');
-            if (exportBtn) {
-                exportBtn.onclick = () => window.exportDailyReportToExcel(exportData, monthStr);
-                exportBtn.disabled = exportData.length === 0; 
-            }
-
-            if (dashboardChart) dashboardChart.destroy();
-            Chart.register(ChartDataLabels);
-
-            dashboardChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [{ label: 'จำนวนรถ (คัน)', data: mergedData, backgroundColor: 'rgba(59, 130, 246, 0.8)', borderColor: 'rgb(37, 99, 235)', borderWidth: 0, borderRadius: 4, tension: 0.4, datalabels: { align: 'end', anchor: 'end', color: 'rgb(37, 99, 235)', font: { weight: 'bold', size: 12 }, offset: -4, formatter: (v) => v > 0 ? v : '' } }]
-                },
-                options: {
-                    responsive: true, maintainAspectRatio: false,
-                    layout: { padding: { top: 25 } }, 
-                    scales: {
-                        x: { grid: { display: false }, title: { display: true, text: 'วันที่ (ตามแผนงาน หรือ วันที่ทำจริงหากไม่มีแผน)' } },
-                        y: { 
-                            beginAtZero: true, 
-                            title: { display: true, text: 'จำนวนรวม (คัน)' }, 
-                            ticks: { stepSize: 1 },
-                            suggestedMax: Math.max(...mergedData) + 2 
-                        } 
-                    },
-                    plugins: { legend: { display: false }, tooltip: { enabled: true } }
-                }
-            });
-            window.renderCheckerProductivity();
-        };
-        
-        window.renderCheckerProductivity = async (dateString = new Date().toISOString().split('T')[0]) => {
-            const container = document.getElementById('checker-productivity-container'); if (!container || !dateString) return;
-            
-            // Ensure we use the slots FOR THAT DAY
-            let dailyData = {};
-            try { dailyData = (await get(ref(rtdb, `daily_targets/${dateString}`))).val() || {}; } catch(e) {}
-            const SLOTS = dailyData.slots || window.DEFAULT_PRODUCT_SLOTS;
-
-            const startOfDay = new Date(dateString + 'T00:00:00'), endOfDay = new Date(dateString + 'T23:59:59');
-            // MODIFIED LOGIC: Count activity only if status is NOT 'remaining'
-            const carsInDay = cars.filter(c => (c.status !== 'remaining') && ((c.interiorTimestamp && new Date(c.interiorTimestamp) >= startOfDay && new Date(c.interiorTimestamp) <= endOfDay) || (c.polishTimestamp && new Date(c.polishTimestamp) >= startOfDay && new Date(c.polishTimestamp) <= endOfDay)));
-            const checkerData = {};
-            const updateCheckerData = (timestamp, checker, activityType) => { if (!timestamp || !checker) return; const date = new Date(timestamp); const minutesOfDay = date.getHours() * 60 + date.getMinutes(); let slotId = 'N/A'; for (const slot of SLOTS) { const startTimeInMinutes = slot.s[0] * 60 + slot.s[1]; const endTimeInMinutes = slot.e[0] * 60 + slot.e[1]; if (minutesOfDay >= startTimeInMinutes && minutesOfDay <= endTimeInMinutes) { slotId = slot.id; break; } } const key = `${checker}_${activityType}`; if (!checkerData[key]) { checkerData[key] = { checker, activityType, total: 0 }; SLOTS.forEach(s => checkerData[key][s.id] = 0); } checkerData[key][slotId]++; checkerData[key].total++; };
-            carsInDay.forEach(car => { 
-                // MODIFIED: Use new status logic to assign activity
-                if (car.interiorTimestamp && (car.status === 'waiting_polish' || (car.status === 'waiting_final' && !car.polishTimestamp))) updateCheckerData(car.interiorTimestamp, car.interiorBy, 'ภายใน'); 
-                if (car.polishTimestamp && (car.status === 'checked' || car.status === 'waiting_final' || car.status === 'waiting_interior')) updateCheckerData(car.polishTimestamp, car.polishBy, 'ขัดสี'); 
-            });
-            const aggregatedData = {}; Object.values(checkerData).forEach(item => { const name = item.checker; aggregatedData[name] = aggregatedData[name] || { total: 0, interior: 0, polish: 0 }; aggregatedData[name].total += item.total; if (item.activityType === 'ภายใน') aggregatedData[name].interior += item.total; else if (item.activityType === 'ขัดสี') aggregatedData[name].polish += item.total; SLOTS.forEach(s => aggregatedData[name][s.id] = (aggregatedData[name][s.id] || 0) + (item[s.id] || 0)); });
-            const slotHeaders = SLOTS.map(s => `<th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase whitespace-nowrap">${s.id}</th>`).join('');
-            const checkerRows = Object.keys(aggregatedData).sort().map(checker => { const data = aggregatedData[checker]; const slotCells = SLOTS.map(s => `<td class="px-4 py-2 text-center text-sm font-medium">${data[s.id] || 0}</td>`).join(''); return `<tr class="hover:bg-gray-50"><td class="px-4 py-2 whitespace-nowrap text-sm font-bold text-gray-900 sticky left-0 bg-white">${checker}</td>${slotCells}<td class="px-4 py-2 text-center text-sm font-bold text-blue-600">${data.total}</td></tr>`; }).join('');
-            const displayDate = window.formatDateOnly(dateString);
-            container.innerHTML = `<div class="mt-6 bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-gray-100"><h3 class="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2"><i data-lucide="Users" class="w-5 h-5 text-purple-500"></i> สรุปผลการปฏิบัติงานรายบุคคล (วันที่ ${displayDate})</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase sticky left-0 bg-gray-50 z-20">ผู้ปฏิบัติงาน</th>${slotHeaders}<th class="px-4 py-2 text-center text-xs font-medium text-gray-500 uppercase">รวม</th></tr></thead><tbody class="divide-y divide-gray-200">${checkerRows.length ? checkerRows : `<tr><td colspan="${SLOTS.length + 2}" class="px-4 py-8 text-center text-gray-400">ไม่พบข้อมูลในวันที่นี้</td></tr>`}</tbody></table></div></div>`;
-            lucide.createIcons();
-        };
-
-        window.handleAddCar = async (e) => {
-            e.preventDefault(); const formData = new FormData(e.target); const vin = formData.get('vin'); const model = formData.get('model');
-            if (!vin) { renderModal('กรุณากรอก VIN', 'error'); return; }
-            try { const carRef = ref(rtdb, 'treatment_cars/' + vin); const carSnap = await get(carRef); if (carSnap.exists()) { renderModal('มี VIN นี้ในระบบแล้ว', 'error'); } else { await set(carRef, { vin: vin, model: model || '', status: 'remaining', createdAt: rtdbServerTimestamp(), }); renderModal('เพิ่มรถยนต์เรียบร้อย', 'success'); e.target.reset(); } } catch (error) { renderModal('เกิดข้อผิดพลาดในการเพิ่มรถ', 'error'); }
-        };
-
-        window.handleFileUpload = async (e) => {
-            const f = e.target.files[0]; if(!f)return;
-            const t = document.getElementById('upload-text'), p = document.getElementById('upload-progress'), b = document.getElementById('upload-bar'), s = document.getElementById('upload-status');
-            t.textContent='กำลังอัปโหลด...'; p.classList.remove('hidden');
-            try {
-                const json = await parseExcelToJSON(f); let updates = {}, count = 0, total = json.length;
-                for(let i=0; i<total; i++) { const row = json[i], vin = row[Object.keys(row).find(k=>k.toLowerCase()==='vin')]; if(!vin) continue; const existing = cars.find(c=>c.vin===vin) || {}; let newData = { ...existing, vin, createdAt: existing.createdAt || rtdbServerTimestamp() }; if(!newData.status) newData.status = 'remaining'; const COLUMN_MAP = { 'vin': 'vin', 'priority': 'priority', 'model': 'model', 'color': 'color', 'target treatment date': 'targetTreatmentDate', 'treatment date': 'treatmentDate', 'responsible treatment': 'responsible treatment', 'responsible treatment ': 'responsibleTreatment', 'status': 'status' }; for (const key in row) { const mapKey = COLUMN_MAP[key.toLowerCase().trim()]; if(mapKey) newData[mapKey] = row[key]; } if(newData.treatmentDate && newData.status==='remaining') newData.status='checked'; updates[`treatment_cars/${vin}`] = newData; count++; if(count%500===0 || i===total-1) { await update(ref(rtdb), updates); updates={}; b.style.width = `${(i/total)*100}%`; s.textContent = `กำลังประมวลผล... ${i+1}/${total}`; } }
-                renderModal(`อัปโหลดสำเร็จ ${count} รายการ`);
-            } catch(e){ console.error(e); renderModal('ผิดพลาด: '+e.message,'error'); }
-            t.textContent='เลือกไฟล์'; p.classList.add('hidden'); e.target.value='';
-        };
-        
-        window.renderAdminSubTab = async (t) => {
-            const c = document.getElementById('admin-subtab-content'); if(!c)return; c.innerHTML=renderLoadingSpinner(false);
-            document.querySelectorAll('.admin-subtab-btn').forEach(b=>{ b.classList.remove('bg-white', 'shadow-sm', 'text-gray-900'); b.classList.add('text-gray-600', 'hover:text-gray-900'); });
-            document.querySelector(`[data-t="${t}"]`).classList.add('bg-white', 'shadow-sm', 'text-gray-900');
-            if(t==='cars'){
-                c.innerHTML=`<div class="space-y-6"><div class="bg-gray-50 p-6 rounded-3xl border border-gray-100"><h3 class="font-semibold mb-4">อัปโหลด Excel</h3><div class="flex items-center gap-4"><label class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-xl cursor-pointer hover:bg-blue-700"><i data-lucide="Upload" class="w-5 h-5"></i><span id="upload-text">เลือกไฟล์</span><input type="file" hidden accept=".xlsx,.xls" onchange="handleFileUpload(event)"></label><div id="upload-progress" class="hidden flex-1"><div class="h-2 bg-gray-200 rounded-full overflow-hidden"><div id="upload-bar" class="h-full bg-blue-600 w-0 transition-all"></div></div><p id="upload-status" class="text-xs text-gray-500 mt-1">กำลังเตรียม...</p></div></div></div><div class="bg-gray-50 p-6 rounded-3xl border border-gray-100"><h3 class="font-semibold mb-4">เพิ่มรถ (ทีละคัน)</h3><form id="add-car-form" onsubmit="handleAddCar(event)" class="space-y-3"><input type="text" name="vin" placeholder="VIN (Required)" required class="w-full p-2.5 rounded-xl border border-gray-300 focus:ring-blue-500"><input type="text" name="model" placeholder="Model" class="w-full p-2.5 rounded-xl border border-gray-300"><button type="submit" id="add-car-btn" class="w-full py-2.5 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700">เพิ่มรถ</button></form></div></div>`;
-                document.getElementById('add-car-form').addEventListener('submit', handleAddCar);
-            } else if(t === 'users') { await renderAdminUsers(c); } else if(t === 'roles') { await renderAdminRoles(c); }
-            lucide.createIcons();
-        };
-
-        window.handleAddUser = async (e) => {
-            e.preventDefault(); const formData = new FormData(e.target); const username = formData.get('username')?.toLowerCase(); const password = formData.get('password'); const role = formData.get('role');
-            if(!username || !password) { renderModal('กรุณากรอก Username และ Password', 'error'); return; }
-            try { const userRef = ref(rtdb, 'users/' + username); const userSnap = await get(userRef); if (userSnap.exists()) { renderModal('มี Username นี้ในระบบแล้ว', 'error'); } else { await set(userRef, { password, role }); renderModal('เพิ่มผู้ใช้งานเรียบร้อย', 'success'); renderAdminSubTab('users'); } } catch (err) { renderModal('เกิดข้อผิดพลาดในการเพิ่มผู้ใช้', 'error'); }
-        };
-
-        window.handleDeleteUser = async (username) => {
-            if (username === 'admin') { renderModal('ไม่สามารถลบผู้ใช้งาน admin หลักได้', 'error'); return; }
-            window.renderConfirmationModal('ยืนยันการลบ', `คุณต้องการลบผู้ใช้งาน "${username}" ใช่หรือไม่?`, async () => { try { await remove(ref(rtdb, 'users/' + username)); renderModal('ลบผู้ใช้งานเรียบร้อย', 'success'); renderAdminSubTab('users'); } catch (err) { renderModal('เกิดข้อผิดพลาดในการลบ', 'error'); } });
-        };
-
-        const renderAdminUsers = async (c) => {
-            let users = {}, roles = {}; try { users = (await get(ref(rtdb, 'users'))).val() || {}; roles = (await get(ref(rtdb, 'roles'))).val() || {}; } catch(e) {}
-            const roleOptions = Object.keys(roles).map(roleName => `<option value="${roleName}">${roleName}</option>`).join('');
-            const userRows = Object.keys(users).map(username => { const user = users[username]; return `<tr key="${username}"><td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${username}</td><td class="px-4 py-3 whitespace-nowrap text-sm text-gray-500">${user.role}</td><td class="px-4 py-3 whitespace-nowrap text-sm text-right"><button onclick="handleDeleteUser('${username}')" class="delete-user-btn text-red-600 hover:text-red-900 ${username === 'admin' ? 'opacity-50 cursor-not-allowed' : ''}" ${username === 'admin' ? 'disabled' : ''}><i data-lucide="Trash2" class="w-5 h-5"></i></button></td></tr>`}).join('');
-            c.innerHTML = `<div class="space-y-6"><div class="p-6 bg-gray-50 rounded-3xl border border-gray-100"><h3 class="font-semibold mb-4">เพิ่มผู้ใช้งานใหม่</h3><form id="add-user-form" onsubmit="handleAddUser(event)" class="grid grid-cols-1 sm:grid-cols-4 gap-3 items-end"><div><label class="block text-sm font-medium text-gray-700">Username</label><input type="text" name="username" required class="mt-1 block w-full border border-gray-300 rounded-xl py-2 px-3"></div><div><label class="block text-sm font-medium text-gray-700">Password</label><input type="password" name="password" required class="mt-1 block w-full border border-gray-300 rounded-xl py-2 px-3"></div><div><label class="block text-sm font-medium text-gray-700">Role</label><select name="role" class="mt-1 block w-full border border-gray-300 rounded-xl py-2 px-3">${roleOptions}</select></div><button type="submit" class="flex justify-center items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl shadow hover:bg-blue-700"><i data-lucide="Plus" class="w-5 h-5"></i><span>เพิ่ม</span></button></form></div><div class="p-4 bg-white rounded-3xl border border-gray-100 shadow-sm"><h3 class="font-semibold mb-4">รายชื่อผู้ใช้งาน</h3><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200"><thead class="bg-gray-50"><tr><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Username</th><th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Role</th><th class="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th></tr></thead><tbody class="bg-white divide-y divide-gray-200">${userRows}</tbody></table></div></div></div>`;
-            lucide.createIcons();
-        };
-
-        window.handleSaveChanges = async () => {
-            const roles = (await get(ref(rtdb, 'roles'))).val() || {};
-            document.querySelectorAll('.role-checkbox').forEach(box => { const role = box.dataset.role, tab = box.dataset.tab; if (role !== 'admin') { roles[role] = roles[role] || {}; roles[role][tab] = box.checked; } });
-            try { await set(ref(rtdb, 'roles'), roles); renderModal('บันทึกสิทธิ์เรียบร้อย', 'success'); permissions = roles[loggedInUser.role]; renderAppLayout(); } catch (err) { renderModal('เกิดข้อผิดพลาดในการบันทึกสิทธิ์', 'error'); }
-        };
-
-        const renderAdminRoles = async (c) => {
-            let roles = (await get(ref(rtdb, 'roles'))).val() || {};
-            const roleNames = Object.keys(roles).sort(), roleHeaders = roleNames.map(roleName => `<th class="px-4 py-3 text-center text-xs font-medium text-gray-600 uppercase">${roleName}</th>`).join(''), roleRows = navItems.map(navItem => { const roleCells = roleNames.map(roleName => `<td class="px-4 py-3 whitespace-nowrap text-center"><input type="checkbox" class="role-checkbox h-4 w-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500" data-role="${roleName}" data-tab="${navItem.id}" ${roles[roleName]?.[navItem.id] ? 'checked' : ''} ${roleName === 'admin' ? 'disabled' : ''}/></td>`).join(''); return `<tr key="${navItem.id}"><td class="px-4 py-3 whitespace-nowrap text-sm font-medium text-gray-900">${navItem.label}</td>${roleCells}</tr>`; }).join('');
-            c.innerHTML = `<div class="space-y-6"><div class="flex justify-end mb-4"><button onclick="handleSaveChanges()" class="flex items-center gap-2 px-6 py-2.5 bg-green-600 text-white rounded-xl shadow hover:bg-green-700"><i data-lucide="Save" class="w-5 h-5"></i><span>บันทึกสิทธิ์</span></button></div><div class="overflow-x-auto"><table class="min-w-full divide-y divide-gray-200 border border-gray-200 rounded-xl overflow-hidden"><thead class="bg-gray-50"><tr><th class="px-4 py-3 text-left text-xs font-medium text-gray-600 uppercase">Tab / Page</th>${roleHeaders}</tr></thead><tbody class="bg-white divide-y divide-gray-200">${roleRows}</tbody></table></div></div>`;
-            lucide.createIcons();
-        };
-
-        window.renderAdminTab = (c) => {
-            if(!permissions?.admin){c.innerHTML=`<div class="h-full flex items-center justify-center text-gray-500">Access Denied</div>`;return}
-            c.innerHTML = `<div class="max-w-5xl mx-auto p-4 md:p-6 space-y-6"><h2 class="text-2xl md:text-3xl font-bold text-gray-900">Admin Panel</h2><div class="flex p-1 bg-gray-100 rounded-xl overflow-x-auto">${['cars','users','roles'].map(t=>`<button onclick="renderAdminSubTab('${t}')" class="admin-subtab-btn flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-all whitespace-nowrap text-gray-600 hover:text-gray-900 capitalize" data-t="${t}">${t}</button>`).join('')}</div><div id="admin-subtab-content" class="bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-gray-100 min-h-[300px]"></div></div>`;
-            window.renderAdminSubTab('cars');
-        };
-
-        window.renderOperationTab = (c) => {
-            const today = new Date().toISOString().split('T')[0];
-            const renderHistoryAndStats = () => {
-                const date = document.getElementById('history-date-filter')?.value; 
-                if (!date) {
-                    const now = new Date();
-                    const isoDate = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-                    document.getElementById('history-date-filter').value = isoDate;
-                    date = isoDate;
-                }
-                const start = new Date(date+'T00:00:00'), end = new Date(date+'T23:59:59');
-                
-                // MODIFIED LOGIC for Operation Stats
-                const interiorCount = cars.filter(c => c.interiorTimestamp && new Date(c.interiorTimestamp) >= start && new Date(c.interiorTimestamp) <= end && (c.status === 'waiting_polish' || c.status === 'waiting_final' || c.status === 'checked')).length;
-                const polishCount = cars.filter(c => c.polishTimestamp && new Date(c.polishTimestamp) >= start && new Date(c.polishTimestamp) <= end && (c.status === 'waiting_interior' || c.status === 'waiting_final' || c.status === 'checked')).length;
-                
-                if (document.getElementById('op-interior-count')) document.getElementById('op-interior-count').textContent = interiorCount;
-                if (document.getElementById('op-polish-count')) document.getElementById('op-polish-count').textContent = polishCount;
-                
-                const list = cars.filter(c=>c.status!=='remaining'&&((c.interiorTimestamp&&new Date(c.interiorTimestamp)>=start&&new Date(c.interiorTimestamp)<=end)||(c.polishTimestamp&&new Date(c.polishTimestamp)>=start&&new Date(c.polishTimestamp)<=end))).sort((a,b)=>Math.max(b.interiorTimestamp||0,b.polishTimestamp||0)-Math.max(a.interiorTimestamp||0,a.polishTimestamp||0));
-                document.getElementById('history-table-container').innerHTML = `<table class="w-full text-left whitespace-nowrap"><thead class="sticky top-0 bg-gray-50/90 backdrop-blur text-xs uppercase text-gray-500 font-semibold"><tr><th class="px-6 py-4">VIN / Model</th><th class="px-6 py-4">Status</th><th class="px-6 py-4 hidden md:table-cell">Interior Date</th><th class="px-6 py-4 hidden md:table-cell">Polish Date</th><th class="px-6 py-4">ผู้บันทึกภายใน</th><th class="px-6 py-4">ผู้ตรวจสอบขัด</th></tr></thead><tbody class="divide-y divide-gray-100">${list.length?list.map(c=>`<tr class="hover:bg-gray-50/50"><td class="px-6 py-4"><div>${c.vin}</div><div class="text-xs text-gray-500">${c.model}</div></td><td class="px-6 py-4"><span class="px-2.5 py-1 rounded-full text-xs font-medium ${getStatusClass(c.status)}">${formatStatus(c.status)}</span></td><td class="px-6 py-4 text-sm text-gray-500 hidden md:table-cell">${c.interiorTimestamp?new Date(c.interiorTimestamp).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}):'-'}</td><td class="px-6 py-4 text-sm text-gray-500 hidden md:table-cell">${c.polishTimestamp?new Date(c.polishTimestamp).toLocaleString('th-TH',{dateStyle:'short',timeStyle:'short'}):'-'}</td><td class="px-6 py-4 text-sm font-medium text-gray-700">${c.interiorBy||'-'}</td><td class="px-6 py-4 text-sm font-medium text-gray-700">${c.polishBy||'-'}</td></tr>`).join(''):`<tr><td colspan="6" class="px-6 py-8 text-center text-gray-400">ไม่พบประวัติ</td></tr>`}</tbody></table>`;
-            };
-            
-            // Set initial date to today
-            const now = new Date();
-            const initialDate = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-
-            c.innerHTML = `<div class="max-w-7xl mx-auto p-4 md:p-6 space-y-6"><div class="flex flex-col md:flex-row md:items-center justify-between gap-4"><h2 class="text-2xl md:text-3xl font-bold text-gray-900">Operation</h2><div class="flex gap-3"><div class="px-4 py-2 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center gap-3"><div class="p-1.5 bg-blue-100 rounded-lg"><i data-lucide="Armchair" class="w-4 h-4 text-blue-600"></i></div><div><p class="text-xs text-gray-500">ภายใน (ยอดวันที่เลือก)</p><p id="op-interior-count" class="text-lg font-bold text-gray-900">-</p></div></div><div class="px-4 py-2 bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center gap-3"><div class="p-1.5 bg-green-100 rounded-lg"><i data-lucide="Sparkles" class="w-4 h-4 text-green-600"></i></div><div><p class="text-xs text-gray-500">ขัดสี (ยอดวันที่เลือก)</p><p id="op-polish-count" class="text-lg font-bold text-gray-900">-</p></div></div></div></div><div class="bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center relative"><div class="pl-4 text-gray-400"><i data-lucide="Search" class="w-5 h-5"></i></div><input type="text" id="vin-search" class="flex-1 w-full min-w-0 py-4 px-3 bg-transparent focus:outline-none text-gray-900 relative z-20 appearance-none" placeholder="ค้นหา VIN..." enterkeyhint="search"><div class="p-1.5"><button id="vin-search-btn" class="p-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700"><i data-lucide="ArrowRight" class="w-5 h-5"></i></button></div></div><div id="operation-car-info"></div><div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden flex flex-col h-[calc(100vh-450px)] min-h-[300px]"><div class="p-4 md:p-6 border-b border-gray-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4"><h3 class="text-lg font-bold text-gray-900 flex items-center gap-2"><i data-lucide="History" class="w-5 h-5 text-gray-500"></i> รายการตรวจสอบล่าสุด</h3><input type="date" id="history-date-filter" value="${initialDate}" class="px-3 py-2 bg-gray-50 border-0 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500"></div><div id="history-table-container" class="flex-1 overflow-auto"></div></div></div>`;
-            
-            // Initial call and event listener
-            renderHistoryAndStats();
-            document.getElementById('history-date-filter').onchange = renderHistoryAndStats;
-            document.getElementById('vin-search-btn').onclick = window.handleOperationSearch;
-            document.getElementById('vin-search').onkeypress = (e) => e.key==='Enter'&&window.handleOperationSearch();
-        };
-
-        window.renderSearchTab = (c) => {
-            c.innerHTML = `<div class="max-w-3xl mx-auto p-4 md:p-6 space-y-6"><h2 class="text-2xl md:text-3xl font-bold text-gray-900">ค้นหาและแก้ไข</h2><div class="bg-white rounded-2xl shadow-sm border border-gray-100 flex items-center sticky top-4 z-10 relative"><div class="pl-4 text-gray-400"><i data-lucide="Search" class="w-5 h-5"></i></div><input type="text" id="vin-search-edit" class="flex-1 w-full min-w-0 py-4 px-3 bg-transparent focus:outline-none text-gray-900 relative z-20 appearance-none" placeholder="ค้นหาเพื่อแก้ไข..." enterkeyhint="search"><div class="p-1.5"><button id="vin-search-edit-btn" class="p-3 bg-blue-600 text-white rounded-xl hover:bg-blue-700"><i data-lucide="ArrowRight" class="w-5 h-5"></i></button></div></div><div id="search-car-info"></div></div>`;
-            document.getElementById('vin-search-edit-btn').onclick = window.handleEditSearch;
-            document.getElementById('vin-search-edit').onkeypress = (e) => e.key==='Enter'&&window.handleEditSearch();
-        };
-
-        window.renderDashboardTab = (c) => {
-            const total = cars.length;
-            
-            // MODIFIED: เสร็จสิ้น (รวม) = waiting_final + checked + waiting_interior (anything polished)
-            const finishedTotal = cars.filter(c => ['waiting_final', 'checked', 'waiting_interior'].includes(c.status)).length;
-            // MODIFIED: คงเหลือ = remaining + waiting_polish (anything not polished)
-            const remainingTotal = cars.filter(c => ['remaining', 'waiting_polish'].includes(c.status)).length;
-
-            const now = new Date(), currentMonthIso = now.toISOString().slice(0, 7), todayIso = now.toISOString().split('T')[0];
-            c.innerHTML = `<div class="max-w-6xl mx-auto p-4 md:p-6 space-y-6"><h2 class="text-2xl md:text-3xl font-bold text-gray-900">Dashboard</h2><div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-6"><div class="bg-white p-6 rounded-3xl shadow-sm border border-gray-100"><div class="flex justify-between mb-4"><h3 class="text-sm font-medium text-gray-500">ทั้งหมด</h3><div class="p-2 bg-blue-50 rounded-xl"><i data-lucide="Car" class="w-5 h-5 text-blue-500"></i></div></div><p class="text-3xl font-bold text-gray-900">${total}</p></div><div class="bg-white p-6 rounded-3xl shadow-sm border border-gray-100"><div class="flex justify-between mb-4"><h3 class="text-sm font-medium text-gray-500">เสร็จสิ้น (รวม)</h3><div class="p-2 bg-green-50 rounded-xl"><i data-lucide="CheckCircle2" class="w-5 h-5 text-green-500"></i></div></div><p class="text-3xl font-bold text-gray-900">${finishedTotal}</p></div><div class="bg-white p-6 rounded-3xl shadow-sm border border-gray-100"><div class="flex justify-between mb-4"><h3 class="text-sm font-medium text-gray-500">คงเหลือ</h3><div class="p-2 bg-yellow-50 rounded-xl"><i data-lucide="Clock" class="w-5 h-5 text-yellow-500"></i></div></div><p class="text-3xl font-bold text-gray-900">${remainingTotal}</p></div><div class="bg-white p-6 rounded-3xl shadow-sm border border-purple-100 bg-purple-50/50"><div class="flex justify-between mb-4"><h3 id="monthly-title" class="text-sm font-medium text-gray-500">ยอดเดือน...</h3><div class="p-2 bg-purple-100 rounded-xl"><i data-lucide="CalendarDays" class="w-5 h-5 text-purple-600"></i></div></div><p id="monthly-total" class="text-3xl font-bold text-purple-900">-</p></div></div><div class="bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-gray-100"><div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6"><h3 class="text-lg font-bold text-gray-900 flex items-center gap-2"><i data-lucide="BarChart3" class="w-5 h-5 text-blue-500"></i> รายงานประจำวัน</h3><div class="flex items-center gap-2"><label for="dashboard-month" class="text-sm font-medium text-gray-600">เลือกเดือน:</label><input type="month" id="dashboard-month" value="${currentMonthIso}" class="px-3 py-2 bg-gray-50 border-0 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500"><button id="dashboard-export-btn" class="flex items-center gap-2 px-3 py-2 bg-gray-900 text-white rounded-xl shadow hover:bg-gray-800 transition-all text-sm disabled:opacity-50" disabled><i data-lucide="FileText" class="w-4 h-4"></i> Export (รายวัน)</button></div></div><div class="relative h-[300px] md:h-[400px] w-full"><canvas id="daily-report-chart"></canvas></div></div><div class="bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-gray-100"><div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6"><h3 class="text-lg font-bold text-gray-900 flex items-center gap-2"><i data-lucide="Users" class="w-5 h-5 text-purple-500"></i> สรุปผลการปฏิบัติงานรายบุคคล</h3><div class="flex items-center gap-2"><label for="productivity-date" class="text-sm font-medium text-gray-600">เลือกวันที่:</label><input type="date" id="productivity-date" value="${todayIso}" class="px-3 py-2 bg-gray-50 border-0 rounded-xl text-sm font-medium focus:ring-2 focus:ring-blue-500"></div></div><div id="checker-productivity-container"></div></div></div>`;
-            const monthInput = document.getElementById('dashboard-month'); if (monthInput) { monthInput.addEventListener('change', () => window.updateDashboardChart(monthInput.value)); window.updateDashboardChart(currentMonthIso); }
-            const dateInput = document.getElementById('productivity-date'); if (dateInput) { dateInput.addEventListener('change', () => window.renderCheckerProductivity(dateInput.value)); window.renderCheckerProductivity(todayIso); }
-        };
-
-        window.renderProductTab = (c) => {
-            const now = new Date();
-            const today = new Date(now.getTime() - (now.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
-            c.innerHTML = `<div class="max-w-7xl mx-auto p-4 md:p-6 space-y-6"><div class="flex flex-col md:flex-row md:items-center justify-between gap-4"><h2 class="text-2xl md:text-3xl font-bold text-gray-900">Product Treatment</h2><div class="flex items-center gap-3 w-full md:w-auto"><input type="date" id="product-date" value="${today}" class="px-4 py-2.5 bg-white border-0 rounded-xl shadow-sm font-medium focus:ring-2 focus:ring-blue-500 flex-1 md:flex-none"><button onclick="window.renderEditSlotsModal()" class="p-2.5 bg-gray-100 text-gray-600 rounded-xl hover:bg-gray-200 transition-all"><i data-lucide="Clock" class="w-5 h-5"></i></button><button id="product-export-btn" class="flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-xl shadow hover:bg-gray-800 transition-all text-sm whitespace-nowrap"><i data-lucide="FileText" class="w-4 h-4"></i> Export (ตาราง)</button></div></div><div class="grid grid-cols-3 gap-3 md:gap-6"><div class="p-4 md:p-6 bg-blue-600 rounded-3xl shadow-lg shadow-blue-200 text-white"><p class="text-blue-100 text-xs md:text-sm font-medium mb-1">Total Target</p><p id="total-target-display" class="text-2xl md:text-4xl font-bold">0</p></div><div class="p-4 md:p-6 bg-green-600 rounded-3xl shadow-lg shadow-green-200 text-white"><p class="text-green-100 text-xs md:text-sm font-medium mb-1">Total Actual</p><p id="total-display" class="text-2xl md:text-4xl font-bold">0</p></div><div class="p-4 md:p-6 bg-yellow-500 rounded-3xl shadow-lg shadow-yellow-200 text-white"><p class="text-yellow-50 text-xs md:text-sm font-medium mb-1">Remeaning</p><p id="remeaning-display" class="text-2xl md:text-4xl font-bold">0</p></div></div><div class="bg-white rounded-3xl shadow-sm border border-gray-100 overflow-hidden"><div class="overflow-x-auto" id="product-table-container">${renderLoadingSpinner(false)}</div></div><div class="bg-white p-4 md:p-6 rounded-3xl shadow-sm border border-gray-100 space-y-3"><h3 class="font-semibold text-gray-900 flex items-center gap-2"><i data-lucide="StickyNote" class="w-5 h-5 text-gray-400"></i> หมายเหตุ</h3><textarea id="product-notes" rows="8" class="w-full p-3 bg-gray-50 border-0 rounded-xl resize-none focus:ring-2 focus:ring-blue-500" placeholder="บันทึกเพิ่มเติม..."></textarea></div><button id="save-slot-targets-btn" class="w-full md:w-auto md:float-right flex items-center justify-center gap-2 px-8 py-4 bg-gray-900 text-white rounded-2xl font-medium hover:bg-gray-800 transition-all active:scale-95"><i data-lucide="Save" class="w-5 h-5"></i><span>บันทึกข้อมูล</span></button></div>`;
-            const dateInput = document.getElementById('product-date');
-            dateInput.onchange = window.renderProductTableAndTarget;
-            document.getElementById('save-slot-targets-btn').onclick = window.handleSaveSlotTargets;
-            document.getElementById('product-export-btn').onclick = () => window.exportProductTabToExcel(dateInput.value);
-            (async () => { try { const snap = await get(ref(rtdb, `daily_targets/${today}`)); if(snap.exists()) { document.getElementById('product-notes').value = snap.val().notes || ''; } } catch(e) {} await window.renderProductTableAndTarget(); })();
-        };
-
-        // MODIFIED: Add new column and logic
-        window.renderSequenceTab = (c) => {
-            const cols = [ 
-                { id: 'remaining', title: 'Remeaning', bg: 'bg-gray-100', text: 'text-gray-900', border: 'border-gray-200' }, 
-                { id: 'waiting_polish', title: 'รอขัด', bg: 'bg-yellow-50', text: 'text-yellow-900', border: 'border-yellow-100' }, 
-                { id: 'waiting_interior', title: 'รอ ภายใน', bg: 'bg-pink-100', text: 'text-pink-900', border: 'border-pink-100' }, // NEW COLUMN
-                { id: 'waiting_final', title: 'รอ Final', bg: 'bg-blue-50', text: 'text-blue-900', border: 'border-blue-100' }, 
-                { id: 'checked', title: 'ตรวจสอบแล้ว', bg: 'bg-green-50', text: 'text-green-900', border: 'border-green-100' } 
-            ];
-            c.innerHTML = `<div class="h-full flex flex-col p-2 md:p-6 overflow-hidden"><h2 class="text-2xl md:text-3xl font-bold text-gray-900 mb-4 px-2 md:px-0 shrink-0">Sequence</h2><div class="flex-1 grid grid-cols-1 md:grid-cols-5 gap-4 min-h-0 overflow-x-auto md:overflow-visible snap-x snap-mandatory md:snap-none">${cols.map(col => { 
-                let list = cars.filter(c => c.status === col.id);
-                // Sort logic based on new workflow
-                if (col.id === 'waiting_polish') {
-                     list.sort((a, b) => (b.interiorTimestamp || 0) - (a.interiorTimestamp || 0)); // Sort by Interior date
-                } else if (col.id === 'waiting_interior') {
-                     list.sort((a, b) => (b.polishTimestamp || 0) - (a.polishTimestamp || 0)); // Sort by Polish date
-                } else if (col.id === 'waiting_final' || col.id === 'checked') {
-                     list.sort((a, b) => (b.polishTimestamp || 0) - (a.polishTimestamp || 0)); // Sort by Polish date
-                }
-                
-                return `<div class="flex flex-col h-full max-h-full rounded-2xl md:rounded-3xl border ${col.border} ${col.bg} overflow-hidden snap-center min-w-[85vw] md:min-w-0"><div class="p-4 font-bold ${col.text} flex justify-between items-center shrink-0 border-b ${col.border} bg-white/50 backdrop-blur sticky top-0 z-10">${col.title} <span class="bg-white px-2.5 py-0.5 rounded-full text-sm shadow-sm">${list.length}</span><button onclick="window.handleSequenceExport('${col.id}')" class="p-1.5 bg-gray-700 text-white rounded-xl hover:bg-gray-800 transition-all"><i data-lucide="FileText" class="w-4 h-4"></i></button></div><div class="p-2 md:p-3 space-y-2 overflow-y-auto flex-1 overscroll-contain">${list.length ? list.map(car => { let timeInfo = ''; if (car.polishTimestamp) { timeInfo += `<p class="text-xs text-gray-500 mt-2 flex items-center gap-1"><i data-lucide="Sparkles" class="w-3 h-3 text-green-500"></i>ขัดสี: ${formatDateTime(car.polishTimestamp)}</p>`; if (car.polishBy) timeInfo += `<p class="text-xs text-gray-500 mt-1 pl-4 flex items-center gap-1">(${car.polishBy})</p>`; } else if (car.interiorTimestamp) { timeInfo += `<p class="text-xs text-gray-500 mt-2 flex items-center gap-1"><i data-lucide="Armchair" class="w-3 h-3 text-blue-500"></i>ภายใน: ${formatDateTime(car.interiorTimestamp)}</p>`; if (car.interiorBy) timeInfo += `<p class="text-xs text-gray-500 mt-1 pl-4 flex items-center gap-1">(${car.interiorBy})</p>`; } return `<div class="bg-white p-3 md:p-4 rounded-xl md:rounded-2xl shadow-sm border border-gray-100 relative group"><div class="pr-6"><div class="font-bold text-gray-900 truncate">${car.vin}</div><div class="text-xs text-gray-500 mt-1 flex items-center gap-2"><span class="truncate max-w-[100px]">${car.model}</span><span class="w-1 h-1 bg-gray-300 rounded-full"></span><span class="truncate">${car.color}</span></div><div class="inline-block mt-2 px-2 py-0.5 bg-gray-100 text-gray-600 text-[10px] font-medium rounded-md">P: ${car.priority||'-'}</div>${timeInfo}</div>
-                    ${car.status==='waiting_polish'?`<button onclick="renderConfirmationModal('ยกเลิกการรอขัด','ย้ายกลับไป Remeaning (ลบข้อมูลภายใน)?',()=>handleCancelPolish('${car.vin}'))" class="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full"><i data-lucide="X" class="w-4 h-4"></i></button>`:''}
-                    ${car.status==='waiting_interior'?`<button onclick="renderConfirmationModal('ยกเลิกการรอภายใน','ย้ายกลับไป Remeaning (ลบข้อมูลขัดสี)?',()=>handleCancelInterior('${car.vin}'))" class="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full"><i data-lucide="X" class="w-4 h-4"></i></button>`:''}
-                    ${car.status==='waiting_final'?`<button onclick="renderConfirmationModal('ยกเลิกรอ Final','ย้ายกลับไปรอขัด (ลบข้อมูลขัดสี)?',()=>handleCancelFinal('${car.vin}'))" class="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full"><i data-lucide="X" class="w-4 h-4"></i></button>${permissions?.admin?`<button onclick="handleConfirmFinal('${car.vin}')" class="mt-3 w-full py-2 bg-green-600 text-white text-sm font-medium rounded-xl hover:bg-green-700 flex items-center justify-center gap-1"><i data-lucide="CheckCircle2" class="w-4 h-4"></i> Confirm</button>`:''}`:''}
-                    ${car.status==='checked'?`<button onclick="renderConfirmationModal('ยกเลิกตรวจสอบ','ย้ายกลับไปรอ Final?',()=>handleCancelChecked('${car.vin}'))" class="absolute top-2 right-2 p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-full"><i data-lucide="X" class="w-4 h-4"></i></button>`:''}
-                </div>`}).join('') : `<div class="h-full flex items-center justify-center text-sm text-gray-400 italic pb-20">ว่าง</div>`}</div></div>`}).join('')}</div></div>`;
-        };
-
-        const renderContent = () => {
-            const el = document.getElementById('app-content'); if(!el)return;
-            const map = { 'operation': window.renderOperationTab, 'search': window.renderSearchTab, 'dashboard': window.renderDashboardTab, 'product': window.renderProductTab, 'sequence': window.renderSequenceTab, 'admin': window.renderAdminTab };
-            (map[activeTab] || window.renderOperationTab)(el); lucide.createIcons();
-        };
-
-        const parseExcelToJSON = (file) => {
-            return new Promise((resolve, reject) => {
-                if (typeof XLSX === 'undefined') { reject(new Error("XLSX library is not loaded.")); return; }
-                const reader = new FileReader();
-                reader.onload = (e) => { const data = e.target.result; const workbook = XLSX.read(data, { type: 'binary' }); const sheetNames = workbook.SheetNames; if (!sheetNames || sheetNames.length === 0) return reject(new Error("ไม่พบชีต (Sheet) ในไฟล์ Excel ที่อัปโหลด")); const sheetName = sheetNames[0]; const worksheet = workbook.Sheets[sheetName]; const json = XLSX.utils.sheet_to_json(worksheet); resolve(json); };
-                reader.onerror = (ex) => reject(ex); reader.readAsBinaryString(file);
-            });
-        };
-        
-        let carDataUnsubscribe = null;
-        const setupCarDataListener = () => {
-            if (carDataUnsubscribe) carDataUnsubscribe();
-            carDataUnsubscribe = onValue(ref(rtdb, 'treatment_cars'), s => { 
-                cars = s.exists() ? Object.values(s.val()) : []; 
-                cars.sort((a,b)=>String(a.priority||'').localeCompare(String(b.priority||''),undefined,{numeric:true})); 
-                renderContent(); 
-                if (activeTab === 'dashboard') { const monthInput = document.getElementById('dashboard-month'); if (monthInput) window.updateDashboardChart(monthInput.value); }
-            });
-        };
-        
-        const setupConnectionListener = () => { onValue(ref(rtdb, '.info/connected'), s => { isOnline = s.val(); updateConnectionStatusUI(); }); };
-        const seedDatabase = async () => { try { const rolesRef = ref(rtdb, 'roles'); const rolesSnap = await get(rolesRef); if (!rolesSnap.exists()) { await set(rolesRef, { admin: { operation: true, search: true, dashboard: true, product: true, sequence: true, admin: true }, operation: { operation: true, search: true, dashboard: true, product: false, sequence: true, admin: false }, SJWD: { operation: false, search: true, dashboard: true, product: true, sequence: true, admin: false } }); } const usersRef = ref(rtdb, 'users/admin'); const usersSnap = await get(usersRef); if (!usersSnap.exists()) { await set(usersRef, { password: '123', role: 'admin' }); } } catch (err) { console.error("Database seeding error:", err); renderModal("Error preparing initial data. Please check Firebase rules.", 'error'); } };
-        const startApp = async () => { renderLoginScreen(); if (rtdb) { setupConnectionListener(); await seedDatabase(); isSeedingComplete = true; renderLoginScreen(); } };
-        startApp();
-    </script>
+        .section-label { width: 40px; text-align: center; font-weight: bold; padding: 0 !important; vertical-align: middle; }
+        .section-label-text { display: inline-block; transform: rotate(-90deg); white-space: nowrap; }
+
+        /* ซ่อนส่วนอื่นๆ เวลาพิมพ์หรือทำ PDF */
+        .hide-on-pdf { display: block; }
+        .pdf-mode .hide-on-pdf { display: none !important; }
+    </style>
 </head>
-<body class="bg-gray-50 text-base antialiased"><div id="app-root"></div></body>
+<body>
+
+    <!-- แถบนำทาง -->
+    <nav class="bg-blue-900 text-white p-4 shadow-md hide-on-pdf">
+        <div class="container mx-auto flex justify-between items-center">
+            <h1 class="text-xl font-bold font-italic">2PS SERVICE Payslip System</h1>
+            <div id="nav-menu">
+                <button onclick="switchRole('login')" class="px-3 py-1 bg-red-500 rounded hover:bg-red-600">ออกจากระบบ</button>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mx-auto p-4 hide-on-pdf" id="main-content">
+        
+        <!-- หน้า Login เลือกว่าจะเป็นใคร -->
+        <div id="view-login" class="max-w-md mx-auto bg-white p-8 rounded-lg shadow-md mt-10 text-center">
+            <h2 class="text-2xl font-bold mb-6 text-gray-800">เข้าสู่ระบบ</h2>
+            <p class="text-gray-600 mb-6">กรุณาเลือกบทบาทการใช้งานของคุณ</p>
+            <div class="space-y-4">
+                <button onclick="switchRole('hr')" class="w-full bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 font-bold">เข้าสู่ระบบแผนก HR (จัดการข้อมูล)</button>
+                <button onclick="switchRole('employee')" class="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 font-bold">เข้าสู่ระบบพนักงาน (ดู/โหลดสลิป)</button>
+            </div>
+        </div>
+
+        <!-- หน้า HR Dashboard -->
+        <div id="view-hr" class="hidden">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-2xl font-bold text-gray-800">HR Dashboard - จัดการข้อมูลสลิปเงินเดือน</h2>
+                <button onclick="showForm()" class="bg-blue-600 text-white px-4 py-2 rounded shadow hover:bg-blue-700">+ สร้างสลิปใหม่แบบแมนนวล</button>
+            </div>
+
+            <!-- กล่องอัปโหลด Excel -->
+            <div class="bg-yellow-50 border-l-4 border-yellow-500 p-5 mb-6 shadow-sm rounded-r-lg flex flex-col md:flex-row gap-4 items-center">
+                <div class="flex-1">
+                    <h3 class="font-bold text-yellow-800 mb-1 text-lg">นำเข้าข้อมูลจากไฟล์ Excel</h3>
+                    <p class="text-sm text-gray-700">ระบบจะดึงข้อมูล <b>เบี้ยขยัน, ค่าตำแหน่ง, ค่าเช่าบ้าน, รายได้อื่นๆ (เงินพิเศษ, แท็กซี่, เบี้ยปลอด)</b> ให้อัตโนมัติ<br>รวมถึง <b>รวมเงินเบิก</b>, <b>คงเหลือ</b> และ <b>เลข บช</b></p>
+                </div>
+                <div class="w-full md:w-1/3">
+                    <label class="block text-sm font-bold text-gray-700 mb-1">ประจำงวด (Period)</label>
+                    <input type="text" id="uploadPeriod" class="w-full border p-2 rounded mb-2" placeholder="งวดจะถูกดึงอัตโนมัติเมื่อเลือกไฟล์">
+                    <input type="file" id="excelUpload" accept=".xlsx, .xls, .csv" class="block w-full text-sm text-gray-500
+                        file:mr-4 file:py-2 file:px-4
+                        file:rounded-md file:border-0
+                        file:text-sm file:font-semibold
+                        file:bg-blue-50 file:text-blue-700
+                        hover:file:bg-blue-100 cursor-pointer">
+                </div>
+            </div>
+
+            <!-- ตารางแสดงสลิปที่สร้างแล้ว -->
+            <div class="bg-white rounded-lg shadow overflow-x-auto mb-8">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="bg-gray-100 border-b">
+                            <th class="p-3">งวด (Period)</th>
+                            <th class="p-3">รหัสพนักงาน</th>
+                            <th class="p-3">ชื่อ - นามสกุล</th>
+                            <th class="p-3">เงินได้สุทธิ</th>
+                            <th class="p-3 text-center">จัดการ</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hr-slip-list">
+                        <!-- รายการจะถูกแทรกด้วย JS -->
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- ฟอร์มกรอกข้อมูลแบบแมนนวล (ซ่อนตอนแรก) -->
+            <div id="hr-form-section" class="bg-white p-6 rounded-lg shadow hidden">
+                <h3 class="text-xl font-bold mb-4 border-b pb-2 text-blue-800">ฟอร์มบันทึกข้อมูลเงินเดือน</h3>
+                <form id="slipForm" onsubmit="saveSlip(event)">
+                    
+                    <h4 class="font-bold bg-gray-200 p-2 mt-4 mb-2 rounded">ข้อมูลพนักงาน</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div><label class="block text-sm">ประจำงวด (Period)</label><input type="text" id="f_period" required class="w-full border p-2 rounded" placeholder="มีนาคม 2567" value="มีนาคม 2567"></div>
+                        <div><label class="block text-sm">รหัสพนักงาน</label><input type="text" id="f_empNo" required class="w-full border p-2 rounded" value="610716002"></div>
+                        <div><label class="block text-sm">ชื่อ - นามสกุล</label><input type="text" id="f_name" required class="w-full border p-2 rounded" value="นรดล วันภักดี"></div>
+                        <div><label class="block text-sm">ตำแหน่ง</label><input type="text" id="f_position" class="w-full border p-2 rounded" value="Senior Planner & Yard Controller Officer"></div>
+                        <div><label class="block text-sm">แผนก</label><input type="text" id="f_division" class="w-full border p-2 rounded" value="วางแผนปฏิบัติการเรือและลานตู้สินค้า"></div>
+                        <div><label class="block text-sm">ฝ่าย</label><input type="text" id="f_dept" class="w-full border p-2 rounded" value="ปฏิบัติการ"></div>
+                    </div>
+
+                    <h4 class="font-bold bg-green-200 p-2 mt-6 mb-2 rounded">เงินได้ (Income)</h4>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div><label class="block text-sm text-blue-700 font-bold">เงินเดือน</label><input type="number" step="0.01" id="f_inc_base" class="w-full border-2 border-blue-200 p-2 rounded num-input calc-inc" value="20417.00"></div>
+                        <div><label class="block text-sm">OT (บาท)</label><input type="number" step="0.01" id="f_inc_ot" class="w-full border p-2 rounded num-input calc-inc" value="12590.40"></div>
+                        <div><label class="block text-sm text-gray-500">OT (ชม.)</label><input type="number" step="0.01" id="f_inc_ot_hr" class="w-full border p-2 rounded num-input" value="106.00"></div>
+                        <div><label class="block text-sm">โบนัส</label><input type="number" step="0.01" id="f_inc_bonus" class="w-full border p-2 rounded num-input calc-inc" value="0.00"></div>
+                        
+                        <div><label class="block text-sm">ค่าอาหาร</label><input type="number" step="0.01" id="f_inc_food" class="w-full border p-2 rounded num-input calc-inc" value="2625.00"></div>
+                        <div><label class="block text-sm">ค่าตำแหน่ง</label><input type="number" step="0.01" id="f_inc_teamldr" class="w-full border p-2 rounded num-input calc-inc" value="0.00"></div>
+                        <div><label class="block text-sm">เบี้ยขยัน</label><input type="number" step="0.01" id="f_inc_incentive" class="w-full border p-2 rounded num-input calc-inc" value="700.00"></div>
+                        <div><label class="block text-sm">ค่าเช่าบ้าน</label><input type="number" step="0.01" id="f_inc_otherwel" class="w-full border p-2 rounded num-input calc-inc" value="0.00"></div>
+                        
+                        <div><label class="block text-sm">รายได้อื่นๆ</label><input type="number" step="0.01" id="f_inc_otherinc" class="w-full border p-2 rounded num-input calc-inc" value="0.00"></div>
+                    </div>
+                    <div class="mt-2 text-right text-lg font-bold text-green-700">รวมเงินได้: <span id="f_total_income">0.00</span></div>
+
+                    <h4 class="font-bold bg-red-200 p-2 mt-6 mb-2 rounded">เงินหัก (Deduction)</h4>
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-4">
+                        <div><label class="block text-sm">ภาษี</label><input type="number" step="0.01" id="f_ded_tax" class="w-full border p-2 rounded num-input calc-ded" value="1915.42"></div>
+                        <div><label class="block text-sm">ประกันสังคม</label><input type="number" step="0.01" id="f_ded_soc" class="w-full border p-2 rounded num-input calc-ded" value="750.00"></div>
+                        <div><label class="block text-sm">เงินหักอื่นๆ</label><input type="number" step="0.01" id="f_ded_other" class="w-full border p-2 rounded num-input calc-ded" value="0.00"></div>
+                    </div>
+                    <div class="mt-2 text-right text-lg font-bold text-red-700">รวมเงินหัก: <span id="f_total_deduction">0.00</span></div>
+
+                    <h4 class="font-bold bg-blue-200 p-2 mt-6 mb-2 rounded">ข้อมูลสะสม & บัญชี (Accumulated & Account)</h4>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                        <div><label class="block text-sm">รายได้สะสม</label><input type="number" step="0.01" id="f_acc_inc" class="w-full border p-2 rounded num-input" value="264168.20"></div>
+                        <div><label class="block text-sm">ภาษีสะสม</label><input type="number" step="0.01" id="f_acc_tax" class="w-full border p-2 rounded num-input" value="3593.50"></div>
+                        <div><label class="block text-sm">ปกส. สะสม</label><input type="number" step="0.01" id="f_acc_soc" class="w-full border p-2 rounded num-input" value="3600.00"></div>
+                        <div><label class="block text-sm">เลขที่บัญชี</label><input type="text" id="f_bank_acc" class="w-full border p-2 rounded" value="6534236789"></div>
+                    </div>
+
+                    <h4 class="font-bold bg-purple-200 p-2 mt-6 mb-2 rounded">ตั้งค่าการแสดงผลช่องในสลิป (Display Settings)</h4>
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 text-sm bg-gray-50 p-4 border rounded">
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="cfg_ot" checked class="form-checkbox h-4 w-4 text-blue-600"> <span>แสดง OT</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="cfg_food" checked class="form-checkbox h-4 w-4 text-blue-600"> <span>แสดง ค่าอาหาร / ค่าตำแหน่ง</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="cfg_incentive" checked class="form-checkbox h-4 w-4 text-blue-600"> <span>แสดง เบี้ยขยัน / ค่าเช่าบ้าน</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="cfg_other_inc" checked class="form-checkbox h-4 w-4 text-blue-600"> <span>แสดง รายได้อื่นๆ</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="cfg_tax" checked class="form-checkbox h-4 w-4 text-red-600"> <span>แสดง ภาษี</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="cfg_soc" checked class="form-checkbox h-4 w-4 text-red-600"> <span>แสดง ประกันสังคม</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="cfg_other_ded" checked class="form-checkbox h-4 w-4 text-red-600"> <span>แสดง เงินหักอื่นๆ</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="cfg_acc_inc" checked class="form-checkbox h-4 w-4 text-green-600"> <span>แสดง รายได้สะสม</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="cfg_acc_tax" checked class="form-checkbox h-4 w-4 text-green-600"> <span>แสดง ภาษีสะสม</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="cfg_acc_soc" checked class="form-checkbox h-4 w-4 text-green-600"> <span>แสดง ปกส. สะสม</span></label>
+                        <label class="flex items-center space-x-2"><input type="checkbox" id="cfg_bank" checked class="form-checkbox h-4 w-4 text-green-600"> <span>แสดง เลขที่บัญชี</span></label>
+                    </div>
+
+                    <div class="mt-8 flex justify-between items-center border-t pt-4">
+                        <div class="text-2xl font-bold text-blue-900">เงินได้สุทธิ: <span id="f_net_income">0.00</span> บาท</div>
+                        <div>
+                            <button type="button" onclick="cancelForm()" class="px-4 py-2 border rounded text-gray-600 mr-2 hover:bg-gray-100">ยกเลิก</button>
+                            <button type="submit" class="px-6 py-2 bg-blue-800 text-white rounded hover:bg-blue-900 font-bold shadow">บันทึกข้อมูล</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- หน้า Employee Dashboard -->
+        <div id="view-employee" class="hidden max-w-lg mx-auto bg-white p-8 rounded-lg shadow-md mt-10 text-center">
+            <h2 class="text-2xl font-bold mb-4 text-gray-800">ค้นหาสลิปเงินเดือน</h2>
+            <p class="text-gray-600 mb-6">กรุณากรอกรหัสพนักงานของคุณเพื่อดูสลิป<br><span class="text-sm text-red-500">(หากนำเข้าจาก Excel รหัสจะเริ่มด้วย EMP- ตามด้วยตัวเลข)</span></p>
+            <input type="text" id="search_empNo" class="w-full border-2 border-gray-300 p-3 rounded mb-4 text-center text-lg" placeholder="เช่น EMP-001 หรือ 610716002">
+            <button onclick="searchSlip()" class="w-full bg-green-600 text-white py-3 rounded-lg hover:bg-green-700 font-bold">ค้นหา</button>
+            <p id="search_error" class="text-red-500 mt-4 hidden">ไม่พบข้อมูลสลิปเงินเดือนของรหัสนี้</p>
+
+            <div id="emp-slip-results" class="mt-6 text-left hidden">
+                <h3 class="font-bold border-b pb-2 mb-2">สลิปของคุณ</h3>
+                <ul id="emp-slip-list" class="space-y-2">
+                    <!-- รายการสลิปจะโผล่ที่นี่ -->
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- พื้นที่สำหรับ Render สลิปเงินเดือนให้เหมือนรูป (ตอนแรกซ่อนไว้) -->
+    <div id="view-payslip" class="hidden pb-20">
+        <div class="text-center mt-4 mb-4 hide-on-pdf">
+            <button onclick="switchRole('employee')" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600 mr-2">กลับไปหน้าค้นหา</button>
+            <button onclick="downloadPDF()" class="px-6 py-2 bg-green-600 text-white rounded hover:bg-green-700 font-bold shadow-lg">
+                <svg class="w-5 h-5 inline-block mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                ดาวน์โหลด PDF
+            </button>
+        </div>
+
+        <div id="payslip-render-area" class="payslip-container shadow-2xl">
+            <!-- Header -->
+            <div class="slip-header">
+                <div>
+                    <img src="messageImage_1760079883553.png" alt="2PS SERVICE Logo" class="logo-image" onerror="this.onerror=null; this.src='https://placehold.co/200x60/ffffff/1e3a8a?text=2PS+SERVICE';">
+                </div>
+                <div class="title-text">PAY SLIP</div>
+                <div class="confidential-box">ลับเฉพาะ</div>
+            </div>
+
+            <!-- Employee Info Table -->
+            <table class="slip-table">
+                <tr class="bg-blue-light text-blue-900">
+                    <th width="12%">รหัสพนักงาน<br>Emp. No.</th>
+                    <th width="20%">ชื่อ - นามสกุล<br>Name Surname</th>
+                    <th width="28%">ตำแหน่ง<br>Position</th>
+                    <th width="15%">แผนก<br>Division</th>
+                    <th width="13%">ฝ่าย<br>Department</th>
+                    <th width="12%">ประจำงวด<br>Period</th>
+                </tr>
+                <tr>
+                    <td id="r_empNo">-</td>
+                    <td id="r_name">-</td>
+                    <td id="r_position">-</td>
+                    <td id="r_division">-</td>
+                    <td id="r_dept">-</td>
+                    <td id="r_period" class="font-bold">-</td>
+                </tr>
+            </table>
+
+            <!-- Income Table -->
+            <table class="slip-table">
+                <tr>
+                    <td rowspan="4" class="bg-blue-dark section-label"><span class="section-label-text">เงินได้</span></td>
+                    <th class="bg-blue-light w-[15%]">เงินเดือน<br><span class="text-xs font-normal">Base Salary</span></th>
+                    <th class="bg-blue-light col-ot w-[15%]">OT<br><span class="text-xs font-normal">(บาท)</span></th>
+                    <th class="bg-blue-light col-food w-[15%]">ค่าอาหาร<br><span class="text-xs font-normal">Food Allowance</span></th>
+                    <th class="bg-blue-light col-incentive w-[15%]">เบี้ยขยัน<br><span class="text-xs font-normal">Incentive Allowance</span></th>
+                    <th class="bg-blue-light col-otherinc w-[15%]">รายได้อื่นๆ<br><span class="text-xs font-normal">Other Income</span></th>
+                    <th class="bg-blue-light w-[25%]">รวมเงินได้<br><span class="text-xs font-normal">Total Income</span></th>
+                </tr>
+                <tr>
+                    <td id="r_inc_base">0.00</td>
+                    <td id="r_inc_ot" class="col-ot">0.00</td>
+                    <td id="r_inc_food" class="col-food">0.00</td>
+                    <td id="r_inc_incentive" class="col-incentive">0.00</td>
+                    <td id="r_inc_otherinc" class="col-otherinc">0.00</td>
+                    <td rowspan="3" id="r_total_income" class="font-bold text-sm bg-gray-50 align-middle text-blue-800">0.00</td>
+                </tr>
+                <tr>
+                    <th class="bg-gray-100">โบนัส<br><span class="text-xs font-normal">Bonus</span></th>
+                    <th class="bg-gray-100 col-ot">OT<br><span class="text-xs font-normal">(ช.ม.)</span></th>
+                    <th class="bg-gray-100 col-food">ค่าตำแหน่ง<br><span class="text-xs font-normal">Position Allowance</span></th>
+                    <th class="bg-gray-100 col-incentive">ค่าเช่าบ้าน<br><span class="text-xs font-normal">House Rent</span></th>
+                    <th class="bg-gray-100 col-otherinc text-transparent">-<br><span class="text-xs font-normal">&nbsp;</span></th>
+                </tr>
+                <tr>
+                    <td id="r_inc_bonus">0.00</td>
+                    <td id="r_inc_ot_hr" class="col-ot">0.00</td>
+                    <td id="r_inc_teamldr" class="col-food">0.00</td>
+                    <td id="r_inc_otherwel" class="col-incentive">0.00</td>
+                    <td class="col-otherinc border-t-0"></td>
+                </tr>
+            </table>
+
+            <!-- Deduction Table -->
+            <table class="slip-table">
+                <tr>
+                    <td rowspan="2" class="bg-blue-dark section-label"><span class="section-label-text">เงินหัก</span></td>
+                    <th class="bg-blue-light col-tax w-[25%]">ภาษี<br><span class="text-xs font-normal">TAX</span></th>
+                    <th class="bg-blue-light col-soc w-[25%]">ประกันสังคม<br><span class="text-xs font-normal">Social Security</span></th>
+                    <th class="bg-blue-light col-otherded w-[25%]">เงินหักอื่นๆ<br><span class="text-xs font-normal">Other Deduct</span></th>
+                    <th class="bg-blue-light w-[25%]">รวมเงินหัก<br><span class="text-xs font-normal">Total Deduction</span></th>
+                </tr>
+                <tr>
+                    <td id="r_ded_tax" class="col-tax">0.00</td>
+                    <td id="r_ded_soc" class="col-soc">0.00</td>
+                    <td id="r_ded_other" class="col-otherded">0.00</td>
+                    <td id="r_total_deduction" class="font-bold text-sm bg-gray-50 align-middle text-red-800">0.00</td>
+                </tr>
+            </table>
+
+            <!-- Footer / Accumulate Table -->
+            <table class="slip-table mt-1">
+                <tr class="bg-blue-light">
+                    <th width="20%" class="col-acc-inc">รายได้สะสม<br><span class="text-xs font-normal">Year Accu. Income</span></th>
+                    <th width="20%" class="col-acc-tax">ภาษีสะสม<br><span class="text-xs font-normal">Year Accu. TAX</span></th>
+                    <th width="20%" class="col-acc-soc">ปกส. สะสม<br><span class="text-xs font-normal">Year Accu. SOC.</span></th>
+                    <th width="20%" class="col-acc-bank">เลขที่บัญชี<br><span class="text-xs font-normal">Bank Account No.</span></th>
+                    <th width="20%">เงินได้สุทธิ<br><span class="text-xs font-normal">Net Income</span></th>
+                </tr>
+                <tr>
+                    <td id="r_acc_inc" class="col-acc-inc">0.00</td>
+                    <td id="r_acc_tax" class="col-acc-tax">0.00</td>
+                    <td id="r_acc_soc" class="col-acc-soc">0.00</td>
+                    <td id="r_bank_acc" class="col-acc-bank">-</td>
+                    <td id="r_net_income" class="font-bold text-sm bg-gray-50 text-green-700">0.00</td>
+                </tr>
+            </table>
+        </div>
+    </div>
+
+    <!-- Javascript -->
+    <script>
+        // โครงสร้างข้อมูลจำลองเพื่อเก็บสลิป
+        let payslipsData = JSON.parse(localStorage.getItem('tips_payslips')) || [];
+        let currentRole = 'login';
+
+        // จัดการหน้าจอที่แสดงตามบทบาท
+        function switchRole(role) {
+            currentRole = role;
+            document.getElementById('view-login').classList.add('hidden');
+            document.getElementById('view-hr').classList.add('hidden');
+            document.getElementById('view-employee').classList.add('hidden');
+            document.getElementById('view-payslip').classList.add('hidden');
+            document.getElementById('nav-menu').classList.remove('hidden');
+
+            if (role === 'login') {
+                document.getElementById('view-login').classList.remove('hidden');
+                document.getElementById('nav-menu').classList.add('hidden');
+            } else if (role === 'hr') {
+                document.getElementById('view-hr').classList.remove('hidden');
+                renderHRList();
+            } else if (role === 'employee') {
+                document.getElementById('view-employee').classList.remove('hidden');
+                document.getElementById('search_empNo').value = '';
+                document.getElementById('emp-slip-results').classList.add('hidden');
+                document.getElementById('search_error').classList.add('hidden');
+            }
+        }
+
+        // ------------------ ระบบดึงข้อมูลจาก Excel ------------------
+        document.getElementById('excelUpload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            // ตรวจสอบชื่อไฟล์เพื่อหางวด (เช่น March = มีนาคม)
+            let filename = file.name.toLowerCase();
+            let parsedPeriod = '';
+            
+            if (filename.includes('jan') || filename.includes('ม.ค.')) parsedPeriod = 'มกราคม';
+            else if (filename.includes('feb') || filename.includes('ก.พ.')) parsedPeriod = 'กุมภาพันธ์';
+            else if (filename.includes('mar') || filename.includes('มี.ค.')) parsedPeriod = 'มีนาคม';
+            else if (filename.includes('apr') || filename.includes('เม.ย.')) parsedPeriod = 'เมษายน';
+            else if (filename.includes('may') || filename.includes('พ.ค.')) parsedPeriod = 'พฤษภาคม';
+            else if (filename.includes('jun') || filename.includes('มิ.ย.')) parsedPeriod = 'มิถุนายน';
+            else if (filename.includes('jul') || filename.includes('ก.ค.')) parsedPeriod = 'กรกฎาคม';
+            else if (filename.includes('aug') || filename.includes('ส.ค.')) parsedPeriod = 'สิงหาคม';
+            else if (filename.includes('sep') || filename.includes('ก.ย.')) parsedPeriod = 'กันยายน';
+            else if (filename.includes('oct') || filename.includes('ต.ค.')) parsedPeriod = 'ตุลาคม';
+            else if (filename.includes('nov') || filename.includes('พ.ย.')) parsedPeriod = 'พฤศจิกายน';
+            else if (filename.includes('dec') || filename.includes('ธ.ค.')) parsedPeriod = 'ธันวาคม';
+
+            // ตรวจหาปีในชื่อไฟล์ เช่น 26 -> 2569 หรือ 67 -> 2567
+            let yearMatch = filename.match(/(20\d{2}|25\d{2}|\d{2})/);
+            if (parsedPeriod && yearMatch) {
+                let yr = parseInt(yearMatch[1]);
+                if (yr < 100) {
+                    if (yr < 50) yr += 2543; // เช่น 26 -> 2569 (2026+543)
+                    else yr += 2500; // เช่น 67 -> 2567
+                } else if (yr < 2500) {
+                    yr += 543; // เช่น 2026 -> 2569
+                }
+                parsedPeriod += " " + yr;
+            }
+
+            // นำงวดที่วิเคราะห์ได้ ไปใส่ช่อง Input ให้อัตโนมัติ (ถ้ายังว่างอยู่)
+            const periodInputElem = document.getElementById('uploadPeriod');
+            if (!periodInputElem.value.trim() && parsedPeriod) {
+                periodInputElem.value = parsedPeriod;
+            }
+
+            const periodInput = periodInputElem.value.trim() || parsedPeriod || 'ไม่ระบุงวด';
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const data = new Uint8Array(e.target.result);
+                const workbook = XLSX.read(data, {type: 'array'});
+                
+                let processedSlips = [];
+                let empCounter = 1; 
+
+                workbook.SheetNames.forEach(sheetName => {
+                    const sheet = workbook.Sheets[sheetName];
+                    const rows = XLSX.utils.sheet_to_json(sheet, {header: 1, defval: ""});
+
+                    if (rows.length < 5) return; 
+
+                    const firstNames = rows[2]; 
+                    const lastNames = rows[3];  
+
+                    for (let col = 1; col < firstNames.length; col++) {
+                        let fName = String(firstNames[col] || "").trim();
+                        let lName = String(lastNames[col] || "").trim();
+                        
+                        if (!fName) continue;
+
+                        let fullName = fName + (lName ? " " + lName : "");
+                        
+                        // ตัวแปรสะสมรายวัน และ ตัวแปรแยกตามเงื่อนไขที่ผู้ใช้ระบุ
+                        let totalAmount = 0; 
+                        let explicitIncentive = 0;   // เบี้ยขยัน
+                        let explicitTeamLdr = 0;     // ค่าตำแหน่ง
+                        let explicitOtherInc = 0;    // รายได้อื่นๆ (เงินพิเศษ, แท็กซี่, เบี้ยปลอด)
+                        let explicitHouseRent = 0;   // ค่าเช่าบ้าน
+                        
+                        let explicitBankAcc = "-";   // เลข บช
+                        let explicitOtherDed = 0;    // เงินหักอื่นๆ (จาก รวมเงินเบิก)
+                        let explicitNetInc = null;   // คงเหลือ
+                        let explicitTotalInc = null; // รวมรายได้
+
+                        for (let r = 4; r < rows.length; r++) {
+                            // อ่านชื่อหัวข้อในคอลัมน์ A
+                            let dateColValue = String(rows[r][0] || "").trim().replace(/\s+/g, ' ');
+                            
+                            // 1. ดักจับแถวที่เป็นตัวเลข 1-31 (สำหรับบวกยอดรายวัน เป็นเงินเดือนหลัก)
+                            let dayNumber = parseInt(dateColValue);
+                            let valStr = String(rows[r][col] || "").replace(/,/g, '');
+                            let cellVal = parseFloat(valStr);
+
+                            if (!isNaN(dayNumber) && dayNumber >= 1 && dayNumber <= 31 && dateColValue == dayNumber) {
+                                if (!isNaN(cellVal)) {
+                                    totalAmount += cellVal;
+                                }
+                            }
+                            // 2. ถ้าเป็นตัวเลขเหมือนกันให้ดักจับตามคำต่างๆ
+                            else if (!isNaN(cellVal)) {
+                                if (dateColValue.includes('เบี้ยขยัน')) {
+                                    explicitIncentive += cellVal;
+                                } else if (dateColValue.includes('ค่าตำแหน่ง')) {
+                                    explicitTeamLdr += cellVal;
+                                } else if (dateColValue.includes('เงินพิเศษ') || dateColValue.includes('ค่าขับแท็กซี่') || dateColValue.includes('ค่าเบี้ยปลอด')) {
+                                    explicitOtherInc += cellVal;
+                                } else if (dateColValue.includes('ค่าเช่าบ้าน')) {
+                                    explicitHouseRent += cellVal;
+                                } else if (dateColValue === 'รวมเงินเบิก' || dateColValue.includes('รวมเงินเบิก') || dateColValue.includes('ยอดการเบิกเงิน')) {
+                                    explicitOtherDed += cellVal; 
+                                } else if (dateColValue === 'คงเหลือ' || dateColValue.includes('คงเหลือ')) {
+                                    explicitNetInc = cellVal;
+                                } else if (dateColValue === 'รวมรายได้' || dateColValue.includes('รวมรายได้')) {
+                                    explicitTotalInc = cellVal;
+                                }
+                            }
+
+                            // 3. ดักจับ "เลข บช" (เป็น Text)
+                            if (dateColValue.includes('เลข บช') || dateColValue.includes('เลขบัญชี')) {
+                                let val = String(rows[r][col] || "").trim();
+                                if (val) explicitBankAcc = val;
+                            }
+                        }
+
+                        // คำนวณรายได้ทั้งหมดที่วิเคราะห์มาได้
+                        let empTotalInc = totalAmount + explicitIncentive + explicitTeamLdr + explicitOtherInc + explicitHouseRent;
+                        let finalNet = explicitNetInc !== null ? explicitNetInc : (empTotalInc - explicitOtherDed);
+
+                        let existingEmpIndex = processedSlips.findIndex(emp => emp.name === fullName);
+                        
+                        if (existingEmpIndex !== -1) {
+                            // กรณีมีชื่อซ้ำอยู่แล้วใน Sheet อื่น จะนำยอดมาทบกัน
+                            processedSlips[existingEmpIndex].income.base += totalAmount;
+                            processedSlips[existingEmpIndex].income.incentive += explicitIncentive;
+                            processedSlips[existingEmpIndex].income.teamldr += explicitTeamLdr;
+                            processedSlips[existingEmpIndex].income.otherinc += explicitOtherInc;
+                            processedSlips[existingEmpIndex].income.otherwel += explicitHouseRent;
+                            
+                            processedSlips[existingEmpIndex].deduction.other += explicitOtherDed;
+                            
+                            processedSlips[existingEmpIndex].total_income += empTotalInc;
+                            processedSlips[existingEmpIndex].total_deduction += explicitOtherDed;
+                            processedSlips[existingEmpIndex].net_income += finalNet;
+                            
+                            if (explicitBankAcc !== "-") {
+                                processedSlips[existingEmpIndex].bank_acc = explicitBankAcc;
+                            }
+                        } else {
+                            let empId = "EMP-" + String(empCounter).padStart(3, '0');
+                            empCounter++;
+
+                            // สร้างสลิป
+                            let newSlip = createEmptySlipObj(empId, fullName, periodInput, totalAmount, explicitOtherDed, finalNet, explicitBankAcc);
+                            
+                            newSlip.income.incentive = explicitIncentive;
+                            newSlip.income.teamldr = explicitTeamLdr;
+                            newSlip.income.otherinc = explicitOtherInc;
+                            newSlip.income.otherwel = explicitHouseRent;
+                            newSlip.total_income = empTotalInc;
+
+                            processedSlips.push(newSlip);
+                        }
+                    }
+                });
+
+                if (processedSlips.length > 0) {
+                    processedSlips.forEach(newP => {
+                        let idx = payslipsData.findIndex(oldP => oldP.name === newP.name && oldP.period === newP.period);
+                        if (idx !== -1) {
+                            payslipsData[idx] = newP; 
+                        } else {
+                            payslipsData.push(newP);  
+                        }
+                    });
+                    
+                    localStorage.setItem('tips_payslips', JSON.stringify(payslipsData));
+                    alert(`อัปโหลดข้อมูลสำเร็จ!\nสร้าง/อัปเดต สลิปทั้งหมด ${processedSlips.length} รายการ สำหรับงวด "${periodInput}"`);
+                    renderHRList();
+                } else {
+                    alert('ไม่พบข้อมูลตามรูปแบบที่กำหนดในไฟล์นี้ (ต้องมีชื่อในแถว 3 และนามสกุลในแถว 4)');
+                }
+                
+                document.getElementById('excelUpload').value = ""; 
+            };
+            reader.readAsArrayBuffer(file);
+        });
+
+        // ฟังก์ชันสร้าง Object โครงสร้างสลิปเปล่า
+        function createEmptySlipObj(empId, name, period, baseIncome, otherDed, netInc, bankAcc) {
+            return {
+                id: Date.now().toString() + Math.floor(Math.random() * 1000),
+                period: period,
+                empNo: empId,
+                name: name,
+                position: "พนักงาน",
+                division: "-",
+                dept: "-",
+                income: {
+                    base: baseIncome, ot: 0, othr: 0,
+                    food: 0, incentive: 0,
+                    bonus: 0, teamldr: 0, otherwel: 0, otherinc: 0
+                },
+                deduction: {
+                    tax: 0, soc: 0, other: otherDed
+                },
+                acc: { inc: 0, tax: 0, soc: 0 },
+                config: { 
+                    ot: true, food: true, incentive: true, other_inc: true,
+                    tax: true, soc: true, other_ded: true, 
+                    acc_inc: true, acc_tax: true, acc_soc: true, bank: true
+                },
+                bank_acc: bankAcc,
+                total_income: baseIncome,
+                total_deduction: otherDed,
+                net_income: netInc
+            };
+        }
+
+        // ------------------ ฝั่ง HR (คู่มือจัดการ) ------------------
+        function showForm() {
+            document.getElementById('hr-form-section').classList.remove('hidden');
+            document.getElementById('hr-slip-list').parentElement.classList.add('hidden');
+            calculateAuto(); 
+        }
+
+        function cancelForm() {
+            document.getElementById('hr-form-section').classList.add('hidden');
+            document.getElementById('hr-slip-list').parentElement.classList.remove('hidden');
+        }
+
+        function formatCurrency(num) {
+            return parseFloat(num).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function getVal(id) {
+            return parseFloat(document.getElementById(id).value) || 0;
+        }
+
+        function calculateAuto() {
+            let totalInc = 0;
+            document.querySelectorAll('.calc-inc').forEach(el => { totalInc += parseFloat(el.value) || 0; });
+            document.getElementById('f_total_income').innerText = formatCurrency(totalInc);
+
+            let totalDed = 0;
+            document.querySelectorAll('.calc-ded').forEach(el => { totalDed += parseFloat(el.value) || 0; });
+            document.getElementById('f_total_deduction').innerText = formatCurrency(totalDed);
+
+            let net = totalInc - totalDed;
+            document.getElementById('f_net_income').innerText = formatCurrency(net);
+        }
+
+        document.querySelectorAll('.num-input').forEach(el => {
+            el.addEventListener('input', calculateAuto);
+        });
+
+        function saveSlip(e) {
+            e.preventDefault();
+            const slip = {
+                id: Date.now().toString(),
+                period: document.getElementById('f_period').value,
+                empNo: document.getElementById('f_empNo').value,
+                name: document.getElementById('f_name').value,
+                position: document.getElementById('f_position').value,
+                division: document.getElementById('f_division').value,
+                dept: document.getElementById('f_dept').value,
+                
+                income: {
+                    base: getVal('f_inc_base'), 
+                    ot: getVal('f_inc_ot'), othr: getVal('f_inc_ot_hr'),
+                    food: getVal('f_inc_food'), incentive: getVal('f_inc_incentive'), 
+                    bonus: getVal('f_inc_bonus'), teamldr: getVal('f_inc_teamldr'), 
+                    otherwel: getVal('f_inc_otherwel'), otherinc: getVal('f_inc_otherinc')
+                },
+                deduction: {
+                    tax: getVal('f_ded_tax'), soc: getVal('f_ded_soc'), other: getVal('f_ded_other')
+                },
+                acc: {
+                    inc: getVal('f_acc_inc'), tax: getVal('f_acc_tax'), soc: getVal('f_acc_soc')
+                },
+                config: {
+                    ot: document.getElementById('cfg_ot').checked,
+                    food: document.getElementById('cfg_food').checked,
+                    incentive: document.getElementById('cfg_incentive').checked,
+                    other_inc: document.getElementById('cfg_other_inc').checked,
+                    tax: document.getElementById('cfg_tax').checked,
+                    soc: document.getElementById('cfg_soc').checked,
+                    other_ded: document.getElementById('cfg_other_ded').checked,
+                    acc_inc: document.getElementById('cfg_acc_inc').checked,
+                    acc_tax: document.getElementById('cfg_acc_tax').checked,
+                    acc_soc: document.getElementById('cfg_acc_soc').checked,
+                    bank: document.getElementById('cfg_bank').checked
+                },
+                bank_acc: document.getElementById('f_bank_acc').value,
+                total_income: getVal('f_total_income'), 
+                total_deduction: getVal('f_total_deduction'),
+                net_income: getVal('f_net_income')
+            };
+
+            // คำนวณยอดรวมจริงๆ ก่อนเซฟ
+            slip.total_income = Object.keys(slip.income).reduce((sum, key) => !key.includes('hr') ? sum + slip.income[key] : sum, 0);
+            slip.total_deduction = Object.values(slip.deduction).reduce((sum, val) => sum + val, 0);
+            slip.net_income = slip.total_income - slip.total_deduction;
+
+            // ลบของเก่าถ้างวดและรหัสซ้ำ
+            payslipsData = payslipsData.filter(p => !(p.empNo === slip.empNo && p.period === slip.period));
+            payslipsData.push(slip);
+            localStorage.setItem('tips_payslips', JSON.stringify(payslipsData));
+            
+            alert('บันทึกข้อมูลเรียบร้อยแล้ว');
+            cancelForm();
+            renderHRList();
+        }
+
+        function renderHRList() {
+            const tbody = document.getElementById('hr-slip-list');
+            tbody.innerHTML = '';
+            // เรียงลำดับล่าสุดขึ้นก่อน
+            const sortedData = [...payslipsData].sort((a,b) => b.id - a.id);
+            
+            if(sortedData.length === 0){
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center p-4 text-gray-500">ยังไม่มีข้อมูลในระบบ</td></tr>';
+                return;
+            }
+
+            sortedData.forEach(slip => {
+                const tr = document.createElement('tr');
+                tr.className = "border-b hover:bg-gray-50";
+                tr.innerHTML = `
+                    <td class="p-3">${slip.period}</td>
+                    <td class="p-3"><span class="bg-gray-200 px-2 py-1 rounded text-xs font-mono">${slip.empNo}</span></td>
+                    <td class="p-3">${slip.name}</td>
+                    <td class="p-3 text-green-600 font-bold">${formatCurrency(slip.net_income)}</td>
+                    <td class="p-3 text-center">
+                        <button onclick="viewSlip('${slip.id}')" class="text-blue-500 hover:text-blue-700 underline">ดูสลิป</button>
+                    </td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // ------------------ ฝั่ง พนักงาน ------------------
+        function searchSlip() {
+            const empNo = document.getElementById('search_empNo').value.trim();
+            const results = payslipsData.filter(p => p.empNo === empNo);
+            
+            const err = document.getElementById('search_error');
+            const resDiv = document.getElementById('emp-slip-results');
+            const list = document.getElementById('emp-slip-list');
+
+            if (results.length === 0) {
+                err.classList.remove('hidden');
+                resDiv.classList.add('hidden');
+            } else {
+                err.classList.add('hidden');
+                resDiv.classList.remove('hidden');
+                list.innerHTML = '';
+                results.forEach(slip => {
+                    const li = document.createElement('li');
+                    li.className = "flex justify-between items-center bg-gray-50 p-3 rounded border";
+                    li.innerHTML = `
+                        <span>งวด: <strong>${slip.period}</strong></span>
+                        <button onclick="viewSlip('${slip.id}')" class="bg-blue-600 text-white px-3 py-1 rounded text-sm hover:bg-blue-700">เปิดดู</button>
+                    `;
+                    list.appendChild(li);
+                });
+            }
+        }
+
+        // ------------------ การแสดงผลสลิป และ PDF ------------------
+        function viewSlip(id) {
+            const slip = payslipsData.find(p => p.id === id);
+            if (!slip) return;
+
+            document.getElementById('r_empNo').innerText = slip.empNo;
+            document.getElementById('r_name').innerText = slip.name;
+            document.getElementById('r_position').innerText = slip.position;
+            document.getElementById('r_division').innerText = slip.division;
+            document.getElementById('r_dept').innerText = slip.dept;
+            document.getElementById('r_period').innerText = slip.period;
+
+            // รวมยอด OT กรณีเป็นสลิปเก่าที่มีหลายช่อง
+            const ot_amt = slip.income.ot !== undefined ? slip.income.ot : ((slip.income.ot1||0) + (slip.income.ot15||0) + (slip.income.ot2||0) + (slip.income.ot3||0));
+            const ot_hr = slip.income.othr !== undefined ? slip.income.othr : ((slip.income.ot1hr||0) + (slip.income.ot15hr||0) + (slip.income.ot2hr||0) + (slip.income.ot3hr||0));
+
+            const old_other_inc = (slip.income.otherinc || 0) + (slip.income.mobile || 0) + (slip.income.travel || 0) + (slip.income.prof || 0);
+            const old_other_ded = (slip.deduction.other || 0) + (slip.deduction.prov || 0) + (slip.deduction.absent || 0) + (slip.deduction.suspend || 0) + (slip.deduction.adjtravel || 0) + (slip.deduction.govhouse || 0) + (slip.deduction.govsave || 0) + (slip.deduction.tisco || 0);
+
+            document.getElementById('r_inc_base').innerText = formatCurrency(slip.income.base || 0);
+            document.getElementById('r_inc_ot').innerText = formatCurrency(ot_amt);
+            document.getElementById('r_inc_ot_hr').innerText = formatCurrency(ot_hr);
+            document.getElementById('r_inc_food').innerText = formatCurrency(slip.income.food || 0);
+            document.getElementById('r_inc_incentive').innerText = formatCurrency(slip.income.incentive || 0);
+            document.getElementById('r_inc_bonus').innerText = formatCurrency(slip.income.bonus || 0);
+            document.getElementById('r_inc_teamldr').innerText = formatCurrency(slip.income.teamldr || 0);
+            document.getElementById('r_inc_otherwel').innerText = formatCurrency(slip.income.otherwel || 0);
+            document.getElementById('r_inc_otherinc').innerText = formatCurrency(old_other_inc);
+            document.getElementById('r_total_income').innerText = formatCurrency(slip.total_income || 0);
+
+            document.getElementById('r_ded_tax').innerText = formatCurrency(slip.deduction.tax || 0);
+            document.getElementById('r_ded_soc').innerText = formatCurrency(slip.deduction.soc || 0);
+            document.getElementById('r_ded_other').innerText = formatCurrency(old_other_ded);
+            document.getElementById('r_total_deduction').innerText = formatCurrency(slip.total_deduction || 0);
+
+            document.getElementById('r_acc_inc').innerText = formatCurrency(slip.acc.inc || 0);
+            document.getElementById('r_acc_tax').innerText = formatCurrency(slip.acc.tax || 0);
+            document.getElementById('r_acc_soc').innerText = formatCurrency(slip.acc.soc || 0);
+            document.getElementById('r_bank_acc').innerText = slip.bank_acc || "-";
+            document.getElementById('r_net_income').innerText = formatCurrency(slip.net_income || 0);
+
+            const config = slip.config || {
+                ot: true, food: true, incentive: true, other_inc: true,
+                tax: true, soc: true, other_ded: true,
+                acc_inc: true, acc_tax: true, acc_soc: true, bank: true
+            };
+
+            const applyVisibility = (className, isVisible) => {
+                document.querySelectorAll('.' + className).forEach(el => {
+                    if(isVisible) el.classList.remove('hidden');
+                    else el.classList.add('hidden');
+                });
+            };
+
+            applyVisibility('col-ot', config.ot !== undefined ? config.ot : true);
+            applyVisibility('col-food', config.food !== undefined ? config.food : true);
+            applyVisibility('col-incentive', config.incentive !== undefined ? config.incentive : true);
+            applyVisibility('col-otherinc', config.other_inc !== undefined ? config.other_inc : true);
+            
+            applyVisibility('col-tax', config.tax !== undefined ? config.tax : true);
+            applyVisibility('col-soc', config.soc !== undefined ? config.soc : true);
+            applyVisibility('col-otherded', config.other_ded !== undefined ? config.other_ded : true);
+            
+            applyVisibility('col-acc-inc', config.acc_inc !== undefined ? config.acc_inc : true);
+            applyVisibility('col-acc-tax', config.acc_tax !== undefined ? config.acc_tax : true);
+            applyVisibility('col-acc-soc', config.acc_soc !== undefined ? config.acc_soc : true);
+            applyVisibility('col-acc-bank', config.bank !== undefined ? config.bank : true);
+
+            document.getElementById('view-hr').classList.add('hidden');
+            document.getElementById('view-employee').classList.add('hidden');
+            document.getElementById('view-payslip').classList.remove('hidden');
+        }
+
+        function downloadPDF() {
+            document.body.classList.add('pdf-mode');
+            const element = document.getElementById('payslip-render-area');
+            const empNo = document.getElementById('r_empNo').innerText;
+            const period = document.getElementById('r_period').innerText;
+            
+            const opt = {
+                margin:       0.2,
+                filename:     `Payslip_${empNo}_${period}.pdf`,
+                image:        { type: 'jpeg', quality: 0.98 },
+                html2canvas:  { scale: 2, useCORS: true },
+                jsPDF:        { unit: 'in', format: 'a4', orientation: 'landscape' }
+            };
+
+            html2pdf().set(opt).from(element).save().then(() => {
+                document.body.classList.remove('pdf-mode');
+            });
+        }
+
+        switchRole('login');
+
+    </script>
+</body>
 </html>
